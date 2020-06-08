@@ -35,7 +35,7 @@ type HttpClient interface {
 }
 
 // EC2MetadataClient to used to obtain a subset of information from EC2 IMDS
-type MetadataClient interface {
+type EC2MetadataClient interface {
 	GetInstanceIdentityDocument() (ec2metadata.EC2InstanceIdentityDocument, error)
 	Region() (string, error)
 }
@@ -45,7 +45,7 @@ type ec2MetadataClientImpl struct {
 }
 
 // New creates an ec2metadata client to retrieve metadata
-func NewMetaDataClient(client HttpClient) MetadataClient {
+func NewMetaDataClient(client HttpClient) EC2MetadataClient {
 	if client == nil {
 		return &ec2MetadataClientImpl{client: ec2metadata.New(session.New(), aws.NewConfig().WithMaxRetries(MetadataRetries))}
 	} else {
