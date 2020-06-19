@@ -15,9 +15,7 @@ import (
 	webhookutils "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/utils"
 )
 
-const (
-	resourceLimit = "1"
-)
+const resourceLimit = "1"
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=fail,groups="",resources=pods,verbs=create,versions=v1,name=mpod.vpc.k8s.aws
 
