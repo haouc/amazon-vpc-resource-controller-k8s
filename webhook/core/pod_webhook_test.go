@@ -33,8 +33,8 @@ var (
 	ctx = context.Background()
 )
 
-// TestAttachPrivateIp tests if pod can be injected with private IP.
-func TestAttachPrivateIp(t *testing.T) {
+// TestAttachPrivateIP tests if pod can be injected with private IP.
+func TestAttachPrivateIP(t *testing.T) {
 	pod := webhookutils.NewWindowsPod("test", "test_namespace", true)
 	ok := shouldAttachPrivateIP(pod)
 	assert.True(t, ok)
@@ -44,15 +44,15 @@ func TestAttachPrivateIp(t *testing.T) {
 	assert.True(t, !ok)
 }
 
-// TestAttachPrivateIpByNodeSelector tests if pod is labeled as Windows by NodeSelector.
-func TestAttachPrivateIpByNodeSelector(t *testing.T) {
+// TestAttachPrivateIPByNodeSelector tests if pod is labeled as Windows by NodeSelector.
+func TestAttachPrivateIPByNodeSelector(t *testing.T) {
 	pod := webhookutils.NewWindowsPod("test", "test_namespace", true)
 	ok := hasWindowsNodeSelector(pod)
 	assert.True(t, ok)
 }
 
-// TestAttachPrivateIpByNodeSelector tests if pod is labeled as Windows by NodeAffinity.
-func TestAttachPrivateIpByNodeAffinity(t *testing.T) {
+// TestAttachPrivateIPByNodeSelector tests if pod is labeled as Windows by NodeAffinity.
+func TestAttachPrivateIPByNodeAffinity(t *testing.T) {
 	pod := webhookutils.NewWindowsPod("test", "test_namespace", false)
 	ok := hasWindowsNodeAffinity(pod)
 	// TODO: implement node affinity for windows pod to enable this test.

@@ -33,9 +33,6 @@ func (kch *K8sCacheHelper) GetSecurityGroupsFromPod(podId types.NamespacedName) 
 	if err := kch.Client.Get(context.Background(), podId, pod); err != nil {
 		panic(err)
 	} else {
-		if list := kch.ShouldAddEniLimits(pod); len(list) > 0 {
-			return list
-		}
-		return nil
+		return kch.ShouldAddENILimits(pod)
 	}
 }

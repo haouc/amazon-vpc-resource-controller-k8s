@@ -37,9 +37,9 @@ func RemoveDuplicatedSg(list []string) []string {
 	return processedList
 }
 
-// ShouldAddEniLimits decide if the testPod can be mutated to inject ENI annotation for security groups.
+// ShouldAddENILimits decide if the testPod can be mutated to inject ENI annotation for security groups.
 // The function returns security group list and true or false for mutating testPod.
-func (kch *K8sCacheHelper) ShouldAddEniLimits(pod *corev1.Pod) []string {
+func (kch *K8sCacheHelper) ShouldAddENILimits(pod *corev1.Pod) []string {
 	helperLog := kch.Log.WithValues("Pod name", pod.Name, "Pod namespace", pod.Namespace)
 
 	// Build SGP list from cache.
@@ -59,16 +59,16 @@ func (kch *K8sCacheHelper) ShouldAddEniLimits(pod *corev1.Pod) []string {
 		panic(err)
 	}
 
-	if sgList := canGetSecurityGroups(sgpList, pod, sa, helperLog); len(sgList) == 0 {
+	if sgList := getPodSecurityGroups(sgpList, pod, sa, helperLog); len(sgList) == 0 {
 		return nil
 	} else {
-		helperLog.Info("Pod got security groups from matched SGP.",
+		helperLog.Info("Pod matched a SecurityGroupPolicy and will get the following Security Groups:",
 			"Security Groups", sgList)
 		return sgList
 	}
 }
 
-func canGetSecurityGroups(
+func getPodSecurityGroups(
 	sgpList *vpcresourcesv1beta1.SecurityGroupPolicyList,
 	pod *corev1.Pod,
 	sa *corev1.ServiceAccount,

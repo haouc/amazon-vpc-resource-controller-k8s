@@ -57,13 +57,13 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 	}
 
 	// Attach private ip to Windows pod which is not running on Host Network.
-	// Attach eni to non-Windows pod which is not running on Host Network.
+	// Attach ENI to non-Windows pod which is not running on Host Network.
 	if shouldAttachPrivateIP(pod) {
 		webhookLog.Info("The pod is valid to be added with private ipv4 address.")
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
-	} else if sgList := a.CacheHelper.ShouldAddEniLimits(pod); len(sgList) > 0 {
-		webhookLog.Info("The pod is valid to be added with eni resources.")
+	} else if sgList := a.CacheHelper.ShouldAddENILimits(pod); len(sgList) > 0 {
+		webhookLog.Info("The pod is valid to be added with ENI resources.")
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 	} else {
