@@ -14,6 +14,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	vpcresourceconfig "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
 	webhookutils "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/utils"
 )
 
@@ -105,7 +106,7 @@ func TestPodAnnotator_Handle(t *testing.T) {
 			p.Path == "/spec/containers/0/resources/requests")
 
 		pv := p.Value.(map[string]interface{})
-		assert.True(t, pv[podEniRequest] == resourceLimit)
+		assert.True(t, pv[vpcresourceconfig.ResourceNamePodENI] == resourceLimit)
 	}
 }
 
@@ -121,7 +122,7 @@ func TestPodAnnotator_Windows_Handle(t *testing.T) {
 			p.Path == "/spec/containers/0/resources/requests")
 
 		pv := p.Value.(map[string]interface{})
-		assert.True(t, pv[ResourceNameIPAddress] == resourceLimit)
+		assert.True(t, pv[vpcresourceconfig.ResourceNameIPAddress] == resourceLimit)
 	}
 }
 

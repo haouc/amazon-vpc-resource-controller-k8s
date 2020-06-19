@@ -11,18 +11,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	vpcresourceconfig "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
 	webhookutils "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/utils"
 )
 
 const (
-	resourceLimit         = "1"
-	podEniRequest         = "vpc.amazonaws.com/pod-eni"
-	ResourceNameIPAddress = "vpc.amazonaws.com/PrivateIPv4Address"
-
-	// NodeLabelOS is the Kubernetes OS label.
-	NodeLabelOS        = "kubernetes.io/os"
-	NodeLabelOSBeta    = "beta.kubernetes.io/os"
-	NodeLabelOSWindows = "windows"
+	resourceLimit = "1"
 )
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=fail,groups="",resources=pods,verbs=create,versions=v1,name=mpod.vpc.k8s.aws
@@ -68,12 +62,12 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 	// Attach eni to non-Windows pod which is not running on Host Network.
 	if shouldAttachPrivateIP(pod) {
 		webhookLog.Info("The pod is valid to be added with private ipv4 address.")
-		pod.Spec.Containers[0].Resources.Limits[ResourceNameIPAddress] = resource.MustParse(resourceLimit)
-		pod.Spec.Containers[0].Resources.Requests[ResourceNameIPAddress] = resource.MustParse(resourceLimit)
+		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
+		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
 	} else if sgList := a.CacheHelper.ShouldAddEniLimits(pod); len(sgList) > 0 {
 		webhookLog.Info("The pod is valid to be added with eni resources.")
-		pod.Spec.Containers[0].Resources.Limits[podEniRequest] = resource.MustParse(resourceLimit)
-		pod.Spec.Containers[0].Resources.Requests[podEniRequest] = resource.MustParse(resourceLimit)
+		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
+		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 	} else {
 		return admission.Allowed("Pod will not be injected with resources limits.")
 	}
@@ -94,12 +88,12 @@ func shouldAttachPrivateIP(pod *corev1.Pod) bool {
 }
 
 func hasWindowsNodeSelector(pod *corev1.Pod) bool {
-	osLabel := pod.Spec.NodeSelector[NodeLabelOS]
+	osLabel := pod.Spec.NodeSelector[vpcresourceconfig.NodeLabelOS]
 
 	// Version Beta is going to be deprecated soon.
-	osLabelBeta := pod.Spec.NodeSelector[NodeLabelOSBeta]
+	osLabelBeta := pod.Spec.NodeSelector[vpcresourceconfig.NodeLabelOSBeta]
 
-	if osLabel != NodeLabelOSWindows && osLabelBeta != NodeLabelOSWindows {
+	if osLabel != vpcresourceconfig.OSWindows && osLabelBeta != vpcresourceconfig.OSWindows {
 		return false
 	}
 
