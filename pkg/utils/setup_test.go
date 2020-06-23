@@ -2,6 +2,7 @@ package utils
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -50,4 +51,157 @@ func init() {
 		Client: testClient,
 		Log:    ctrl.Log.WithName("testLog"),
 	}
+}
+
+// NewSecurityGroupPolicyOne creates a test security group policy's pointer.
+func NewSecurityGroupPolicyOne(name string, namespace string, securityGroups []string) *vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := &vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"role": "db"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "environment",
+						Operator: "In",
+						Values:   []string{"qa", "production"},
+					},
+				},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
+
+// NewSecurityGroupPolicyTwo creates a test security group policy's pointer.
+func NewSecurityGroupPolicyTwo(name string, namespace string, securityGroups []string) *vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := &vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "vpc-controller"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "environment",
+						Operator: "In",
+						Values:   []string{"qa", "production"},
+					},
+				},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
+
+// NewPod creates a regular pod for test
+func NewPod(name string, sa string, namespace string) *corev1.Pod {
+	pod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels: map[string]string{
+				"role":        "db",
+				"environment": "qa",
+				"app":         "test_app",
+			},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Resources: corev1.ResourceRequirements{},
+				},
+			},
+			ServiceAccountName: sa,
+		},
+		Status: corev1.PodStatus{
+			Conditions: []corev1.PodCondition{
+				{
+					Type:   corev1.PodReady,
+					Status: corev1.ConditionTrue,
+				},
+			},
+		},
+	}
+	return pod
+}
+
+// NewPodNotForENI creates a regular pod no need for ENI for test.
+func NewPodNotForENI(name string, sa string, namespace string) *corev1.Pod {
+	pod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels: map[string]string{
+				"app": "test_app",
+			},
+		},
+		Spec: corev1.PodSpec{
+			ServiceAccountName: sa,
+		},
+	}
+	return pod
+}
+
+// NewPodForMultiENI creates a regular pod for ENIs for test.
+func NewPodForMultiENI(name string, sa string, namespace string) *corev1.Pod {
+	pod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels: map[string]string{
+				"app":         "vpc-controller",
+				"role":        "db",
+				"environment": "qa",
+			},
+		},
+		Spec: corev1.PodSpec{
+			ServiceAccountName: sa,
+		},
+	}
+	return pod
+}
+
+// NewServiceAccount creates a test service account.
+func NewServiceAccount(name string, namespace string) *corev1.ServiceAccount {
+	sa := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"role":        "db",
+				"environment": "qa",
+			},
+		},
+		Secrets:                      nil,
+		ImagePullSecrets:             nil,
+		AutomountServiceAccountToken: nil,
+	}
+	return sa
 }

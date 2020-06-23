@@ -180,3 +180,139 @@ func isEverySecurityGroupIncluded(retrievedSgs []string) bool {
 	}
 	return true
 }
+
+// NewSecurityGroupPolicyCombined creates a test SGP with both pod and SA selectors.
+func NewSecurityGroupPolicyCombined(
+	name string, namespace string, securityGroups []string) vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"role": "db"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      "environment",
+					Operator: "In",
+					Values:   []string{"qa", "production"},
+				}},
+			},
+			ServiceAccountSelector: vpcresourcesv1beta1.ServiceAccountSelector{
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"role": "db"},
+					MatchExpressions: []metav1.LabelSelectorRequirement{{
+						Key:      "environment",
+						Operator: "In",
+						Values:   []string{"qa", "production"},
+					}},
+				},
+				MatchNames: []string{"test_sa"},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
+
+// NewSecurityGroupPolicyPodSelector creates a test SGP with only pod selector.
+func NewSecurityGroupPolicyPodSelector(
+	name string, namespace string, securityGroups []string) vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"role": "db"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{{
+					Key:      "environment",
+					Operator: "In",
+					Values:   []string{"qa", "production"},
+				}},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
+
+// NewSecurityGroupPolicyEmptyPodSelector creates a test SGP with only empty pod selector.
+func NewSecurityGroupPolicyEmptyPodSelector(name string, namespace string, securityGroups []string) vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels:      map[string]string{},
+				MatchExpressions: []metav1.LabelSelectorRequirement{},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
+
+// NewSecurityGroupPolicySaSelector creates a test SGP with only SA selector.
+func NewSecurityGroupPolicySaSelector(name string, namespace string, securityGroups []string) vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			ServiceAccountSelector: vpcresourcesv1beta1.ServiceAccountSelector{
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{"role": "db"},
+					MatchExpressions: []metav1.LabelSelectorRequirement{{
+						Key:      "environment",
+						Operator: "In",
+						Values:   []string{"qa", "production"},
+					}},
+				},
+				MatchNames: []string{"test_sa"},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
+
+// NewSecurityGroupPolicyEmptySaSelector creates a test SGP with only empty SA selector.
+func NewSecurityGroupPolicyEmptySaSelector(name string, namespace string, securityGroups []string) vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			ServiceAccountSelector: vpcresourcesv1beta1.ServiceAccountSelector{
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels:      map[string]string{},
+					MatchExpressions: []metav1.LabelSelectorRequirement{},
+				},
+				MatchNames: []string{"test_sa"},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
