@@ -76,15 +76,20 @@ func (kch *K8sCacheHelper) getPodSecurityGroups(
 		hasPodSelector := sgp.Spec.PodSelector != nil
 		hasSASelector := sgp.Spec.ServiceAccountSelector.MatchNames != nil ||
 			sgp.Spec.ServiceAccountSelector.LabelSelector != nil
-		if !hasPodSelector && !hasSASelector {
-			sgpLogger.Info("Found an invalid SecurityGroupPolicy due to both of podSelector and saSelector are null.",
+		hasSecurityGroup := sgp.Spec.SecurityGroups.Groups != nil && len(sgp.Spec.SecurityGroups.Groups) > 0
+
+		if (!hasPodSelector && !hasSASelector) || !hasSecurityGroup {
+			sgpLogger.Info(
+				"Found an invalid SecurityGroupPolicy due to either both of podSelector and saSelector are null, " +
+					"or security groups is nil or empty.",
 				"Invalid SGP", types.NamespacedName{Name: sgp.Name, Namespace: sgp.Namespace},
 				"Security Groups", sgp.Spec.SecurityGroups)
 			continue
 		}
 
 		podMatched, saMatched := false, false
-		if podSelector, podSelectorError := metav1.LabelSelectorAsSelector(sgp.Spec.PodSelector); podSelectorError == nil {
+		if podSelector, podSelectorError :=
+			metav1.LabelSelectorAsSelector(sgp.Spec.PodSelector); podSelectorError == nil {
 			if podSelector.Matches(labels.Set(pod.Labels)) {
 				podMatched = true
 			}
@@ -92,7 +97,8 @@ func (kch *K8sCacheHelper) getPodSecurityGroups(
 			sgpLogger.Error(podSelectorError, "Failed converting SGP pod selector to match pod labels.",
 				"SGP name", sgp.Name, "SGP namespace", sgp.Namespace)
 		}
-		if saSelector, saSelectorError := metav1.LabelSelectorAsSelector(sgp.Spec.ServiceAccountSelector.LabelSelector); saSelectorError == nil {
+		if saSelector, saSelectorError :=
+			metav1.LabelSelectorAsSelector(sgp.Spec.ServiceAccountSelector.LabelSelector); saSelectorError == nil {
 			if Include(sa.Name, sgp.Spec.ServiceAccountSelector.MatchNames) &&
 				saSelector.Matches(labels.Set(sa.Labels)) {
 				saMatched = true
@@ -102,18 +108,11 @@ func (kch *K8sCacheHelper) getPodSecurityGroups(
 				"SGP name", sgp.Name, "SGP namespace", sgp.Namespace)
 		}
 
-		matched := true
-		if hasPodSelector && !podMatched {
-			matched = false
+		if (hasPodSelector && !podMatched) || (hasSASelector && !saMatched) {
+			continue
 		}
 
-		if hasSASelector && !saMatched {
-			matched = false
-		}
-
-		if matched && sgp.Spec.SecurityGroups.Groups != nil {
-			sgList = append(sgList, sgp.Spec.SecurityGroups.Groups...)
-		}
+		sgList = append(sgList, sgp.Spec.SecurityGroups.Groups...)
 	}
 
 	sgList = RemoveDuplicatedSg(sgList)

@@ -113,7 +113,7 @@ func main() {
 	//webhookServer.Register("/validate-v1-pod", &webhook.Admission{Handler: &podValidator{}})
 
 	setupLog.Info("registering webhooks to the webhook server")
-	webhookServer.Register("/mutate-v1-pod", &webhook.Admission{Handler: &webhookcore.PodAnnotator{
+	webhookServer.Register("/mutate-v1-pod", &webhook.Admission{Handler: &webhookcore.PodResourceInjector{
 		Client:      mgr.GetClient(),
 		CacheHelper: cacheHelper,
 		Log:         ctrl.Log.WithName("webhook").WithName("Pod Mutating"),

@@ -156,6 +156,20 @@ func TestCanInjectENI_MismatchedSASelector(t *testing.T) {
 	assert.True(t, len(sgs) == 0)
 }
 
+// TestEmptySecurityGroupInSGP tests empty security group groupids in SGP.
+func TestEmptySecurityGroupInSGP(t *testing.T) {
+	securityGroupPolicyPod := NewSecurityGroupPolicyPodSelector(
+		"test", "test_namespace", testSecurityGroupsOne)
+	securityGroupPolicyPod.Spec.SecurityGroups.Groups = []string{}
+	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{
+		TypeMeta: metav1.TypeMeta{},
+		ListMeta: metav1.ListMeta{},
+		Items:    []vpcresourcesv1beta1.SecurityGroupPolicy{securityGroupPolicyPod},
+	}
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, testSA)
+	assert.True(t, len(sgs) == 0)
+}
+
 // TestShouldAddENILimits tests if pod is valid for SGP to inject ENI limits/requests.
 func TestShouldAddENILimits(t *testing.T) {
 	sgList, _ := helper.ShouldAddENILimits(testPod)

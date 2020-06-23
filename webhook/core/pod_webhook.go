@@ -19,8 +19,8 @@ const resourceLimit = "1"
 
 // +kubebuilder:webhook:path=/mutate-v1-pod,mutating=true,failurePolicy=fail,groups="",resources=pods,verbs=create,versions=v1,name=mpod.vpc.k8s.aws
 
-// PodAnnotator annotates Pods
-type PodAnnotator struct {
+// PodResourceInjector injects resources into Pods
+type PodResourceInjector struct {
 	Client      client.Client
 	decoder     *admission.Decoder
 	CacheHelper *webhookutils.K8sCacheHelper
@@ -30,10 +30,10 @@ type PodAnnotator struct {
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts/status,verbs=get
 
-func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admission.Response {
+func (prj *PodResourceInjector) Handle(ctx context.Context, req admission.Request) admission.Response {
 	pod := &corev1.Pod{}
-	webhookLog := a.Log.WithValues("Pod name", pod.Name, "Pod namespace", pod.Namespace)
-	err := a.decoder.Decode(req, pod)
+	webhookLog := prj.Log.WithValues("Pod name", pod.Name, "Pod namespace", pod.Namespace)
+	err := prj.decoder.Decode(req, pod)
 	if err != nil {
 		return admission.Errored(http.StatusBadRequest, err)
 	}
@@ -56,21 +56,17 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 
 	// Attach private ip to Windows pod which is not running on Host Network.
 	// Attach ENI to non-Windows pod which is not running on Host Network.
-	if shouldAttachPrivateIP(pod) {
+	if shouldInjectPrivateIP(pod) {
 		webhookLog.Info("Injecting resource to the first container of the pod",
-			"resource name", "PrivateIPv4Address", "resource count", "1")
+			"resource name", vpcresourceconfig.ResourceNameIPAddress, "resource count", resourceLimit)
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
-	} else if sgList, err := a.CacheHelper.ShouldAddENILimits(pod); err == nil && len(sgList) > 0 {
+	} else if prj.shouldInjectPodENI(pod) {
 		webhookLog.Info("Injecting resource to the first container of the pod",
-			"resource name", "pod-eni", "resource count", "1")
+			"resource name", vpcresourceconfig.ResourceNamePodENI, "resource count", resourceLimit)
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 	} else {
-		if err != nil {
-			webhookLog.Error(err,
-				"Webhook encountered an error when trying to check if the pod has security groups assigned.")
-		}
 		return admission.Allowed("Pod will not be injected with resources limits.")
 	}
 
@@ -85,7 +81,17 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
 }
 
-func shouldAttachPrivateIP(pod *corev1.Pod) bool {
+func (prj *PodResourceInjector) shouldInjectPodENI(pod *corev1.Pod) bool {
+	sgList, err := prj.CacheHelper.ShouldAddENILimits(pod)
+	webhookLog := prj.Log.WithValues("Pod name", pod.Name, "Pod namespace", pod.Namespace)
+	if err != nil {
+		webhookLog.Error(err,
+			"Webhook encountered an error when trying to check if the pod has security groups assigned.")
+	}
+	return len(sgList) > 0
+}
+
+func shouldInjectPrivateIP(pod *corev1.Pod) bool {
 	return hasWindowsNodeSelector(pod) || hasWindowsNodeAffinity(pod)
 }
 
@@ -114,11 +120,11 @@ func containerHasCustomizedLimit(pod *corev1.Pod) bool {
 	return false
 }
 
-// PodAnnotator implements admission.DecoderInjector.
+// PodResourceInjector implements admission.DecoderInjector.
 // A decoder will be automatically injected.
 
 // InjectDecoder injects the decoder.
-func (a *PodAnnotator) InjectDecoder(d *admission.Decoder) error {
-	a.decoder = d
+func (prj *PodResourceInjector) InjectDecoder(d *admission.Decoder) error {
+	prj.decoder = d
 	return nil
 }

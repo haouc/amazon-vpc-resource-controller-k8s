@@ -27,17 +27,17 @@ var (
 	namespace = "test_namespace"
 	saName    = "test_sa"
 	logger    = ctrl.Log.WithName("test")
-	testPa    *PodAnnotator
-	handlerPa *PodAnnotator
+	testPa    *PodResourceInjector
+	handlerPa *PodResourceInjector
 	ctx       = context.Background()
 )
 
 func init() {
-	testPa = getPodAnnotator()
-	handlerPa = getPodAnnotator()
+	testPa = getPodResourceInjector()
+	handlerPa = getPodResourceInjector()
 }
 
-func getPodAnnotator() *PodAnnotator {
+func getPodResourceInjector() *PodResourceInjector {
 	testScheme := runtime.NewScheme()
 	clientgoscheme.AddToScheme(testScheme)
 	vpcresourcesv1beta1.AddToScheme(testScheme)
@@ -48,7 +48,7 @@ func getPodAnnotator() *PodAnnotator {
 		NewSecurityGroupPolicy(name, namespace, []string{"sg-00001"}),
 	)
 	decoder, _ := admission.NewDecoder(testScheme)
-	pa := &PodAnnotator{
+	pa := &PodResourceInjector{
 		Client:  testClient,
 		decoder: decoder,
 		CacheHelper: &webhookutils.K8sCacheHelper{
@@ -60,26 +60,32 @@ func getPodAnnotator() *PodAnnotator {
 	return pa
 }
 
-// TestAttachPrivateIP tests if pod can be injected with private IP.
-func TestAttachPrivateIP(t *testing.T) {
+// TestInjectPrivateIP tests if pod can be injected with private IP.
+func TestInjectPrivateIP(t *testing.T) {
 	pod := NewWindowsPod("test", "test_namespace", true)
-	ok := shouldAttachPrivateIP(pod)
+	ok := shouldInjectPrivateIP(pod)
 	assert.True(t, ok)
 
 	pod = NewPod("test", "sa_test", "test_namespace")
-	ok = shouldAttachPrivateIP(pod)
+	ok = shouldInjectPrivateIP(pod)
 	assert.True(t, !ok)
 }
 
-// TestAttachPrivateIPByNodeSelector tests if pod is labeled as Windows by NodeSelector.
-func TestAttachPrivateIPByNodeSelector(t *testing.T) {
+func TestInjectPodENI(t *testing.T) {
+	pod := NewPod(name, saName, namespace)
+	canInjectENI := testPa.shouldInjectPodENI(pod)
+	assert.True(t, canInjectENI)
+}
+
+// TestInjectPrivateIPByNodeSelector tests if pod is labeled as Windows by NodeSelector.
+func TestInjectPrivateIPByNodeSelector(t *testing.T) {
 	pod := NewWindowsPod("test", "test_namespace", true)
 	ok := hasWindowsNodeSelector(pod)
 	assert.True(t, ok)
 }
 
-// TestAttachPrivateIPByNodeSelector tests if pod is labeled as Windows by NodeAffinity.
-func TestAttachPrivateIPByNodeAffinity(t *testing.T) {
+// TestInjectPrivateIPByNodeAffinity tests if pod is labeled as Windows by NodeAffinity.
+func TestInjectPrivateIPByNodeAffinity(t *testing.T) {
 	pod := NewWindowsPod("test", "test_namespace", false)
 	ok := hasWindowsNodeAffinity(pod)
 	// TODO: implement node affinity for windows pod to enable this test.
@@ -96,20 +102,20 @@ func TestCheckContainerLimits(t *testing.T) {
 	assert.True(t, !hasLimits)
 }
 
-// TestPodAnnotator_InjectDecoder tests injecting decoder into pod annotator.
-func TestPodAnnotator_InjectDecoder(t *testing.T) {
+// TestPodResourceInjector_InjectDecoder tests injecting decoder into pod annotator.
+func TestPodResourceInjector_InjectDecoder(t *testing.T) {
 	var decoder *admission.Decoder
 	assert.NoError(t, testPa.InjectDecoder(decoder))
 }
 
-// TestPodAnnotator_Handle test webhook mutating requested empty request.
-func TestPodAnnotator_Empty_Handle(t *testing.T) {
+// TestPodResourceInjector_Empty_Handle tests webhook mutating requested empty request.
+func TestPodResourceInjector_Empty_Handle(t *testing.T) {
 	resp := testPa.Handle(ctx, admission.Request{})
 	assert.True(t, !resp.Allowed && resp.Result.Code == http.StatusBadRequest)
 }
 
-// TestPodAnnotator_Handle test webhook mutating requested Linux pod.
-func TestPodAnnotator_Handle(t *testing.T) {
+// TestPodResourceInjector_Handle test webhook mutating requested Linux pod.
+func TestPodResourceInjector_Handle(t *testing.T) {
 	pod := NewPod("test", "test_sa", "test_namespace")
 	resp := getResponse(pod)
 	assert.True(t, resp.Allowed)
@@ -124,8 +130,8 @@ func TestPodAnnotator_Handle(t *testing.T) {
 	}
 }
 
-// TestPodAnnotator_Handle test webhook mutating requested Windows pod.
-func TestPodAnnotator_Windows_Handle(t *testing.T) {
+// TestPodResourceInjector_Windows_Handle tests webhook mutating requested Windows pod.
+func TestPodResourceInjector_Windows_Handle(t *testing.T) {
 	pod := NewWindowsPod("test", "test_namespace", true)
 	resp := getResponse(pod)
 	assert.True(t, resp.Allowed)
