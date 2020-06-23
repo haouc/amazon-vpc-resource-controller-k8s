@@ -44,6 +44,50 @@ func NewPod(name string, sa string, namespace string) *corev1.Pod {
 	return pod
 }
 
+// NewPodNotForENI creates a regular pod no need for ENI for test.
+func NewPodNotForENI(name string, sa string, namespace string) *corev1.Pod {
+	pod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels: map[string]string{
+				"app": "test_app",
+			},
+		},
+		Spec: corev1.PodSpec{
+			ServiceAccountName: sa,
+		},
+	}
+	return pod
+}
+
+// NewPodForMultiENI creates a regular pod for ENIs for test.
+func NewPodForMultiENI(name string, sa string, namespace string) *corev1.Pod {
+	pod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels: map[string]string{
+				"app":         "vpc-controller",
+				"role":        "db",
+				"environment": "qa",
+			},
+		},
+		Spec: corev1.PodSpec{
+			ServiceAccountName: sa,
+		},
+	}
+	return pod
+}
+
 // NewWindowsPod creates a windows pod for test.
 // Parameter useSelector can set if using nodeSelector or nodeAffinity for OS type.
 func NewWindowsPod(name string, namespace string, useSelector bool) *corev1.Pod {
@@ -292,8 +336,8 @@ func NewServiceAccount(name string, namespace string) *corev1.ServiceAccount {
 	return sa
 }
 
-// NewSecurityGroupPolicy creates a test security group policy's pointer.
-func NewSecurityGroupPolicy(name string, namespace string, securityGroups []string) *vpcresourcesv1beta1.SecurityGroupPolicy {
+// NewSecurityGroupPolicyOne creates a test security group policy's pointer.
+func NewSecurityGroupPolicyOne(name string, namespace string, securityGroups []string) *vpcresourcesv1beta1.SecurityGroupPolicy {
 	sgp := &vpcresourcesv1beta1.SecurityGroupPolicy{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
@@ -303,6 +347,33 @@ func NewSecurityGroupPolicy(name string, namespace string, securityGroups []stri
 		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
 			PodSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{"role": "db"},
+				MatchExpressions: []metav1.LabelSelectorRequirement{
+					{
+						Key:      "environment",
+						Operator: "In",
+						Values:   []string{"qa", "production"},
+					},
+				},
+			},
+			SecurityGroups: vpcresourcesv1beta1.GroupIds{
+				Groups: securityGroups,
+			},
+		},
+	}
+	return sgp
+}
+
+// NewSecurityGroupPolicyTwo creates a test security group policy's pointer.
+func NewSecurityGroupPolicyTwo(name string, namespace string, securityGroups []string) *vpcresourcesv1beta1.SecurityGroupPolicy {
+	sgp := &vpcresourcesv1beta1.SecurityGroupPolicy{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: vpcresourcesv1beta1.SecurityGroupPolicySpec{
+			PodSelector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "vpc-controller"},
 				MatchExpressions: []metav1.LabelSelectorRequirement{
 					{
 						Key:      "environment",

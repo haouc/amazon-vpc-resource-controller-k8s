@@ -54,7 +54,7 @@ func TestRemoveDuplicatedSg(t *testing.T) {
 // TestCanInjectENI_CombinedSelectors tests SGP with both Pod and SA selectors.
 func TestCanInjectENI_CombinedSelectors(t *testing.T) {
 	securityGroupPolicyCombined := NewSecurityGroupPolicyCombined(
-		"test", "test_namespace", testSecurityGroups)
+		"test", "test_namespace", testSecurityGroupsOne)
 	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{
 		TypeMeta: metav1.TypeMeta{},
 		ListMeta: metav1.ListMeta{},
@@ -62,7 +62,7 @@ func TestCanInjectENI_CombinedSelectors(t *testing.T) {
 	}
 
 	// Combined SA selector and PodSelector
-	sgs := getPodSecurityGroups(sgpList, testPod, testSA, nil)
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, testSA)
 	assert.True(t, isEverySecurityGroupIncluded(sgs))
 }
 
@@ -70,13 +70,13 @@ func TestCanInjectENI_CombinedSelectors(t *testing.T) {
 func TestCanInjectENI_PodSelectors(t *testing.T) {
 	// PodSelector alone
 	securityGroupPolicyPod := NewSecurityGroupPolicyPodSelector(
-		"test", "test_namespace", testSecurityGroups)
+		"test", "test_namespace", testSecurityGroupsOne)
 	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{
 		TypeMeta: metav1.TypeMeta{},
 		ListMeta: metav1.ListMeta{},
 		Items:    []vpcresourcesv1beta1.SecurityGroupPolicy{securityGroupPolicyPod},
 	}
-	sgs := getPodSecurityGroups(sgpList, testPod, testSA, nil)
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, testSA)
 	assert.True(t, isEverySecurityGroupIncluded(sgs))
 }
 
@@ -84,13 +84,13 @@ func TestCanInjectENI_PodSelectors(t *testing.T) {
 func TestCanInjectENI_SASelectors(t *testing.T) {
 	// SaSelector alone
 	securityGroupPolicySa := NewSecurityGroupPolicySaSelector(
-		"test", "test_namespace", testSecurityGroups)
+		"test", "test_namespace", testSecurityGroupsOne)
 	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{
 		TypeMeta: metav1.TypeMeta{},
 		ListMeta: metav1.ListMeta{},
 		Items:    []vpcresourcesv1beta1.SecurityGroupPolicy{securityGroupPolicySa},
 	}
-	sgs := getPodSecurityGroups(sgpList, testPod, testSA, nil)
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, testSA)
 	assert.True(t, isEverySecurityGroupIncluded(sgs))
 }
 
@@ -108,7 +108,7 @@ func TestCanInjectENI_Multi_SGPs(t *testing.T) {
 		ListMeta: metav1.ListMeta{},
 		Items:    sgsList,
 	}
-	sgs := getPodSecurityGroups(sgpList, testPod, testSA, nil)
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, testSA)
 	assert.True(t, isEverySecurityGroupIncluded(sgs))
 }
 
@@ -116,13 +116,13 @@ func TestCanInjectENI_Multi_SGPs(t *testing.T) {
 func TestCanInjectENI_EmptyPodSelector(t *testing.T) {
 	// Empty testPod selector in CRD
 	securityGroupPolicyEmptyPodSelector := NewSecurityGroupPolicyEmptyPodSelector(
-		"test", "test_namespace", testSecurityGroups)
+		"test", "test_namespace", testSecurityGroupsOne)
 	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{
 		TypeMeta: metav1.TypeMeta{},
 		ListMeta: metav1.ListMeta{},
 		Items:    []vpcresourcesv1beta1.SecurityGroupPolicy{securityGroupPolicyEmptyPodSelector},
 	}
-	sgs := getPodSecurityGroups(sgpList, testPod, testSA, nil)
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, testSA)
 	assert.True(t, isEverySecurityGroupIncluded(sgs))
 }
 
@@ -130,13 +130,13 @@ func TestCanInjectENI_EmptyPodSelector(t *testing.T) {
 func TestCanInjectENI_EmptySASelector(t *testing.T) {
 	// Empty testSA selector in CRD
 	securityGroupPolicyEmptySaSelector := NewSecurityGroupPolicyEmptySaSelector(
-		"test", "test_namespace", testSecurityGroups)
+		"test", "test_namespace", testSecurityGroupsOne)
 	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{
 		TypeMeta: metav1.TypeMeta{},
 		ListMeta: metav1.ListMeta{},
 		Items:    []vpcresourcesv1beta1.SecurityGroupPolicy{securityGroupPolicyEmptySaSelector},
 	}
-	sgs := getPodSecurityGroups(sgpList, testPod, testSA, nil)
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, testSA)
 	assert.True(t, isEverySecurityGroupIncluded(sgs))
 }
 
@@ -144,7 +144,7 @@ func TestCanInjectENI_EmptySASelector(t *testing.T) {
 func TestCanInjectENI_MismatchedSASelector(t *testing.T) {
 	// Mismatched testPod testSA
 	securityGroupPolicySa := NewSecurityGroupPolicySaSelector(
-		"test", "test_namespace", testSecurityGroups)
+		"test", "test_namespace", testSecurityGroupsOne)
 	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{
 		TypeMeta: metav1.TypeMeta{},
 		ListMeta: metav1.ListMeta{},
@@ -152,27 +152,29 @@ func TestCanInjectENI_MismatchedSASelector(t *testing.T) {
 	}
 	mismatchedSa := testSA.DeepCopy()
 	mismatchedSa.Labels["environment"] = "dev"
-	sgs := getPodSecurityGroups(sgpList, testPod, mismatchedSa, nil)
+	sgs := helper.getPodSecurityGroups(sgpList, testPod, mismatchedSa)
 	assert.True(t, len(sgs) == 0)
 }
 
 // TestShouldAddENILimits tests if pod is valid for SGP to inject ENI limits/requests.
 func TestShouldAddENILimits(t *testing.T) {
-	sgList := helper.ShouldAddENILimits(testPod)
-	assert.True(t, sgList[0] == testSecurityGroups[0])
+	sgList, _ := helper.ShouldAddENILimits(testPod)
+	assert.True(t, sgList[0] == testSecurityGroupsOne[0])
 
 	// Mismatched testPod namespace
 	mismatchedPod := NewPod("test_pod", "test_sa", "test_namespace_1")
-	assert.Panics(t, func() { helper.ShouldAddENILimits(mismatchedPod) })
+	list, err := helper.ShouldAddENILimits(mismatchedPod)
+	assert.True(t, list == nil)
+	assert.Error(t, err)
 }
 
 func isEverySecurityGroupIncluded(retrievedSgs []string) bool {
-	if len(retrievedSgs) != len(testSecurityGroups) {
+	if len(retrievedSgs) != len(testSecurityGroupsOne) {
 		return false
 	}
 
 	for _, s := range retrievedSgs {
-		if !Include(s, testSecurityGroups) {
+		if !Include(s, testSecurityGroupsOne) {
 			return false
 		}
 	}

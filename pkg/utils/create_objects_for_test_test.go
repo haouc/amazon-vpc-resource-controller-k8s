@@ -48,44 +48,44 @@ func TestNewServiceAccount(t *testing.T) {
 
 // TestNewSecurityGroupPolicy tests new test Security Group Policy creation.
 func TestNewSecurityGroupPolicy(t *testing.T) {
-	sgp := NewSecurityGroupPolicy(name, namespace, testSecurityGroups)
+	sgp := NewSecurityGroupPolicyOne(name, namespace, testSecurityGroupsOne)
 	assert.True(t,
 		sgp.Name == name &&
 			sgp.Namespace == namespace &&
-			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroups[0])
+			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroupsOne[0])
 }
 
 // TestNewSecurityGroupPolicyEmptyPodSelector tests new SGP with empty testPod selector.
 func TestNewSecurityGroupPolicyEmptyPodSelector(t *testing.T) {
-	sgp := NewSecurityGroupPolicyEmptyPodSelector(name, namespace, testSecurityGroups)
+	sgp := NewSecurityGroupPolicyEmptyPodSelector(name, namespace, testSecurityGroupsOne)
 	ps, _ := metav1.LabelSelectorAsSelector(sgp.Spec.PodSelector)
 	assert.True(t,
 		sgp.Name == name &&
 			sgp.Namespace == namespace &&
-			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroups[0] &&
+			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroupsOne[0] &&
 			ps.Empty())
 }
 
 // TestNewSecurityGroupPolicyEmptySaSelector tests new SGP with empty SA selector.
 func TestNewSecurityGroupPolicyEmptySaSelector(t *testing.T) {
-	sgp := NewSecurityGroupPolicyEmptySaSelector(name, namespace, testSecurityGroups)
+	sgp := NewSecurityGroupPolicyEmptySaSelector(name, namespace, testSecurityGroupsOne)
 	ls, _ := metav1.LabelSelectorAsSelector(sgp.Spec.ServiceAccountSelector.LabelSelector)
 	assert.True(t,
 		sgp.Name == name &&
 			sgp.Namespace == namespace &&
-			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroups[0] &&
+			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroupsOne[0] &&
 			ls.Empty())
 }
 
 // TestNewSecurityGroupPolicyCombined tests new SGP with both SA and testPod selector.
 func TestNewSecurityGroupPolicyCombined(t *testing.T) {
-	sgp := NewSecurityGroupPolicyCombined(name, namespace, testSecurityGroups)
+	sgp := NewSecurityGroupPolicyCombined(name, namespace, testSecurityGroupsOne)
 	ps, _ := metav1.LabelSelectorAsSelector(sgp.Spec.PodSelector)
 	ls, _ := metav1.LabelSelectorAsSelector(sgp.Spec.ServiceAccountSelector.LabelSelector)
 	assert.True(t,
 		sgp.Name == name &&
 			sgp.Namespace == namespace &&
-			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroups[0] &&
+			sgp.Spec.SecurityGroups.Groups[0] == testSecurityGroupsOne[0] &&
 			!ls.Empty() && !ps.Empty())
 }
 
@@ -99,7 +99,7 @@ func TestNewPodWithContainerLimits(t *testing.T) {
 
 // TestNewSecurityGroupPolicyPodSelector tests SGP with pod selector.
 func TestNewSecurityGroupPolicyPodSelector(t *testing.T) {
-	podSgp := NewSecurityGroupPolicyPodSelector(name, namespace, testSecurityGroups)
+	podSgp := NewSecurityGroupPolicyPodSelector(name, namespace, testSecurityGroupsOne)
 	assert.True(t, podSgp.Spec.PodSelector.MatchLabels["role"] == "db")
 	exp := podSgp.Spec.PodSelector.MatchExpressions[0]
 	assert.True(t,
@@ -110,7 +110,7 @@ func TestNewSecurityGroupPolicyPodSelector(t *testing.T) {
 
 // TestNewSecurityGroupPolicySaSelector tests SGP with SA selector.
 func TestNewSecurityGroupPolicySaSelector(t *testing.T) {
-	saSgp := NewSecurityGroupPolicySaSelector(name, namespace, testSecurityGroups)
+	saSgp := NewSecurityGroupPolicySaSelector(name, namespace, testSecurityGroupsOne)
 	assert.True(t, saSgp.Spec.ServiceAccountSelector.MatchNames[0] == testSA.Name)
 	assert.True(t, saSgp.Spec.ServiceAccountSelector.MatchLabels["role"] == "db")
 	exp := saSgp.Spec.ServiceAccountSelector.LabelSelector.MatchExpressions[0]

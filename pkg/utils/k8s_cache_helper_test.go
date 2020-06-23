@@ -15,19 +15,37 @@ func TestK8sCacheHelper_GetSecurityGroupsFromPod(t *testing.T) {
 	podList := &corev1.PodList{}
 	saList := &corev1.ServiceAccountList{}
 	sgpList := &vpcresourcesv1beta1.SecurityGroupPolicyList{}
-	TestClient.List(nil, podList)
-	assert.True(t, len(podList.Items) == 1)
+	testClient.List(nil, podList)
+	assert.True(t, len(podList.Items) == 3)
 
-	TestClient.List(nil, saList)
+	testClient.List(nil, saList)
 	assert.True(t, len(saList.Items) == 1)
 
-	TestClient.List(nil, sgpList)
-	assert.True(t, len(sgpList.Items) == 1)
+	testClient.List(nil, sgpList)
+	assert.True(t, len(sgpList.Items) == 2)
 
-	sgList := helper.GetSecurityGroupsFromPod(types.NamespacedName{
+	sgList, _ := helper.GetSecurityGroupsFromPod(types.NamespacedName{
 		Name:      testPod.Name,
 		Namespace: testPod.Namespace,
 	})
-	assert.True(t, len(sgList) == len(testSecurityGroups))
+	assert.True(t, len(sgList) == len(testSecurityGroupsOne))
 	assert.True(t, isEverySecurityGroupIncluded(sgList))
+}
+
+// TestK8sCacheHelper_GetNoSecurityGroupsFromPod tests the API to get zero Security Group from k8s cache.
+func TestK8sCacheHelper_GetNoSecurityGroupsFromPod(t *testing.T) {
+	sgList, _ := helper.GetSecurityGroupsFromPod(types.NamespacedName{
+		Name:      testPod.Name + "_NoENI",
+		Namespace: testPod.Namespace,
+	})
+	assert.True(t, len(sgList) == 0)
+}
+
+// TestK8sCacheHelper_GetMultipleSecurityGroupsFromPod tests the API to get Security Groups from more than one SGP in cache.
+func TestK8sCacheHelper_GetMultipleSecurityGroupsFromPod(t *testing.T) {
+	sgList, _ := helper.GetSecurityGroupsFromPod(types.NamespacedName{
+		Name:      testPod.Name + "_ENIs",
+		Namespace: testPod.Namespace,
+	})
+	assert.True(t, len(sgList) == len(append(testSecurityGroupsOne, testSecurityGroupsTwo...)))
 }

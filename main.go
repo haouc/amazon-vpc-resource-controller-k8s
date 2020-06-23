@@ -107,13 +107,13 @@ func main() {
 
 	// +kubebuilder:scaffold:builder
 	setupLog.Info("setting up webhook server")
-	hookServer := mgr.GetWebhookServer()
+	webhookServer := mgr.GetWebhookServer()
 
 	//TODO: if we need validating webhook for pod.
-	//hookServer.Register("/validate-v1-pod", &webhook.Admission{Handler: &podValidator{}})
+	//webhookServer.Register("/validate-v1-pod", &webhook.Admission{Handler: &podValidator{}})
 
 	setupLog.Info("registering webhooks to the webhook server")
-	hookServer.Register("/mutate-v1-pod", &webhook.Admission{Handler: &webhookcore.PodAnnotator{
+	webhookServer.Register("/mutate-v1-pod", &webhook.Admission{Handler: &webhookcore.PodAnnotator{
 		Client:      mgr.GetClient(),
 		CacheHelper: cacheHelper,
 		Log:         ctrl.Log.WithName("webhook").WithName("Pod Mutating"),

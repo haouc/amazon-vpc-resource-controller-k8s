@@ -44,9 +44,7 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 		return admission.Allowed("Pod on HostNetwork will not be injected with resources.")
 	}
 
-	webhookLog.Info("Requesting Mutating Pod: ",
-		"OS", pod.Spec.NodeSelector,
-		"Resources Limits", pod.Spec.Containers[0].Resources.Limits)
+	webhookLog.Info("Admission request received: ")
 
 	if pod.Spec.Containers[0].Resources.Limits == nil {
 		pod.Spec.Containers[0].Resources.Limits = make(corev1.ResourceList)
@@ -59,14 +57,20 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 	// Attach private ip to Windows pod which is not running on Host Network.
 	// Attach ENI to non-Windows pod which is not running on Host Network.
 	if shouldAttachPrivateIP(pod) {
-		webhookLog.Info("The pod is valid to be added with private ipv4 address.")
+		webhookLog.Info("Injecting resource to the first container of the pod",
+			"resource name", "PrivateIPv4Address", "resource count", "1")
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
-	} else if sgList := a.CacheHelper.ShouldAddENILimits(pod); len(sgList) > 0 {
-		webhookLog.Info("The pod is valid to be added with ENI resources.")
+	} else if sgList, err := a.CacheHelper.ShouldAddENILimits(pod); err == nil && len(sgList) > 0 {
+		webhookLog.Info("Injecting resource to the first container of the pod",
+			"resource name", "pod-eni", "resource count", "1")
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 	} else {
+		if err != nil {
+			webhookLog.Error(err,
+				"Webhook encountered an error when trying to check if the pod has security groups assigned.")
+		}
 		return admission.Allowed("Pod will not be injected with resources limits.")
 	}
 
@@ -75,7 +79,7 @@ func (a *PodAnnotator) Handle(ctx context.Context, req admission.Request) admiss
 		webhookLog.Error(err, "Marshalling pod failed:")
 		return admission.Errored(http.StatusInternalServerError, err)
 	}
-	webhookLog.Info("Mutating Pod finished. ",
+	webhookLog.Info("Mutating Pod finished.",
 		"Resources Limits", pod.Spec.Containers[0].Resources.Limits)
 
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
@@ -108,15 +112,6 @@ func containerHasCustomizedLimit(pod *corev1.Pod) bool {
 	// TODO: implement container limits user input
 	// Referring to https://sim.amazon.com/issues/EKS-NW-424
 	return false
-}
-
-// PodAnnotator implements inject.Client.
-// A client will be automatically injected.
-
-// InjectClient injects the client.
-func (a *PodAnnotator) InjectClient(c client.Client) error {
-	a.Client = c
-	return nil
 }
 
 // PodAnnotator implements admission.DecoderInjector.
