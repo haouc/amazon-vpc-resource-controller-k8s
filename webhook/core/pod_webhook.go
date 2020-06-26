@@ -40,11 +40,8 @@ func (prj *PodResourceInjector) Handle(ctx context.Context, req admission.Reques
 
 	// Ignore pod that is scheduled on host network.
 	if pod.Spec.HostNetwork {
-		webhookLog.Info("Not injecting resources as the pod runs on Host Network.")
 		return admission.Allowed("Pod on HostNetwork will not be injected with resources.")
 	}
-
-	webhookLog.Info("Admission request received: ")
 
 	if pod.Spec.Containers[0].Resources.Limits == nil {
 		pod.Spec.Containers[0].Resources.Limits = make(corev1.ResourceList)
@@ -61,11 +58,13 @@ func (prj *PodResourceInjector) Handle(ctx context.Context, req admission.Reques
 			"resource name", vpcresourceconfig.ResourceNameIPAddress, "resource count", resourceLimit)
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNameIPAddress] = resource.MustParse(resourceLimit)
-	} else if prj.shouldInjectPodENI(pod) {
+	} else if sgList, cacheErr := prj.CacheHelper.GetPodSecurityGroups(pod); len(sgList) > 0 {
 		webhookLog.Info("Injecting resource to the first container of the pod",
 			"resource name", vpcresourceconfig.ResourceNamePodENI, "resource count", resourceLimit)
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
+	} else if cacheErr != nil {
+		return admission.Denied("Webhood encountered error to Get or List object from k8s cache.")
 	} else {
 		return admission.Allowed("Pod will not be injected with resources limits.")
 	}
@@ -79,16 +78,6 @@ func (prj *PodResourceInjector) Handle(ctx context.Context, req admission.Reques
 		"Resources Limits", pod.Spec.Containers[0].Resources.Limits)
 
 	return admission.PatchResponseFromRaw(req.Object.Raw, marshaledPod)
-}
-
-func (prj *PodResourceInjector) shouldInjectPodENI(pod *corev1.Pod) bool {
-	sgList, err := prj.CacheHelper.ShouldAddENILimits(pod)
-	webhookLog := prj.Log.WithValues("Pod name", pod.Name, "Pod namespace", pod.Namespace)
-	if err != nil {
-		webhookLog.Error(err,
-			"Webhook encountered an error when trying to check if the pod has security groups assigned.")
-	}
-	return len(sgList) > 0
 }
 
 func shouldInjectPrivateIP(pod *corev1.Pod) bool {

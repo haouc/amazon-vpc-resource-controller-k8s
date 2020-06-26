@@ -60,6 +60,28 @@ func getPodResourceInjector() *PodResourceInjector {
 	return pa
 }
 
+func getPodResourceInjectorWithoutSGP() *PodResourceInjector {
+	testScheme := runtime.NewScheme()
+	clientgoscheme.AddToScheme(testScheme)
+	vpcresourcesv1beta1.AddToScheme(testScheme)
+	testClient := fake.NewFakeClientWithScheme(
+		testScheme,
+		NewPod(name, saName, namespace),
+		NewServiceAccount(saName, namespace),
+	)
+	decoder, _ := admission.NewDecoder(testScheme)
+	pa := &PodResourceInjector{
+		Client:  testClient,
+		decoder: decoder,
+		CacheHelper: &webhookutils.K8sCacheHelper{
+			Client: testClient,
+			Log:    logger,
+		},
+		Log: logger,
+	}
+	return pa
+}
+
 // TestInjectPrivateIP tests if pod can be injected with private IP.
 func TestInjectPrivateIP(t *testing.T) {
 	pod := NewWindowsPod("test", "test_namespace", true)
@@ -69,12 +91,6 @@ func TestInjectPrivateIP(t *testing.T) {
 	pod = NewPod("test", "sa_test", "test_namespace")
 	ok = shouldInjectPrivateIP(pod)
 	assert.True(t, !ok)
-}
-
-func TestInjectPodENI(t *testing.T) {
-	pod := NewPod(name, saName, namespace)
-	canInjectENI := testPa.shouldInjectPodENI(pod)
-	assert.True(t, canInjectENI)
 }
 
 // TestInjectPrivateIPByNodeSelector tests if pod is labeled as Windows by NodeSelector.
@@ -117,7 +133,7 @@ func TestPodResourceInjector_Empty_Handle(t *testing.T) {
 // TestPodResourceInjector_Handle test webhook mutating requested Linux pod.
 func TestPodResourceInjector_Handle(t *testing.T) {
 	pod := NewPod("test", "test_sa", "test_namespace")
-	resp := getResponse(pod)
+	resp := getResponse(pod, handlerPa)
 	assert.True(t, resp.Allowed)
 
 	for _, p := range resp.Patches {
@@ -133,7 +149,7 @@ func TestPodResourceInjector_Handle(t *testing.T) {
 // TestPodResourceInjector_Windows_Handle tests webhook mutating requested Windows pod.
 func TestPodResourceInjector_Windows_Handle(t *testing.T) {
 	pod := NewWindowsPod("test", "test_namespace", true)
-	resp := getResponse(pod)
+	resp := getResponse(pod, handlerPa)
 	assert.True(t, resp.Allowed)
 
 	for _, p := range resp.Patches {
@@ -146,7 +162,16 @@ func TestPodResourceInjector_Windows_Handle(t *testing.T) {
 	}
 }
 
-func getResponse(pod *corev1.Pod) admission.Response {
+// TestPodResourceInjector_WithoutSGP_Handle tests how Handle handles no SGP found in cache
+func TestPodResourceInjector_WithoutSGP_Handle(t *testing.T) {
+	pod := NewPod("test", "test_sa", "test_namespace")
+	injector := getPodResourceInjectorWithoutSGP()
+	resp := getResponse(pod, injector)
+	assert.True(t, resp.Allowed)
+	assert.True(t, len(resp.Patches) == 0)
+}
+
+func getResponse(pod *corev1.Pod, injector *PodResourceInjector) admission.Response {
 	podRaw, _ := json.Marshal(pod)
 	req := admission.Request{
 		AdmissionRequest: v1beta1.AdmissionRequest{
@@ -156,7 +181,7 @@ func getResponse(pod *corev1.Pod) admission.Response {
 			},
 		},
 	}
-	resp := handlerPa.Handle(ctx, req)
+	resp := injector.Handle(ctx, req)
 	return resp
 }
 
