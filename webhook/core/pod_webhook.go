@@ -64,6 +64,7 @@ func (prj *PodResourceInjector) Handle(ctx context.Context, req admission.Reques
 		pod.Spec.Containers[0].Resources.Limits[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 		pod.Spec.Containers[0].Resources.Requests[vpcresourceconfig.ResourceNamePodENI] = resource.MustParse(resourceLimit)
 	} else if cacheErr != nil {
+		webhookLog.Error(cacheErr, "Webhook client failed to Get or List objects from cache.")
 		return admission.Denied("Webhood encountered error to Get or List object from k8s cache.")
 	} else {
 		return admission.Allowed("Pod will not be injected with resources limits.")
