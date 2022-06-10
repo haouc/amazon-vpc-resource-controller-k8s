@@ -63,7 +63,7 @@ generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="scripts/templates/boilerplate.go.txt" paths="./..."
 
 # Build the docker image
-docker-build: check-env test
+docker-build: check-env
 	docker build . -t ${IMAGE}
 
 # Push the docker image

@@ -19,6 +19,7 @@ import (
 	"net/http"
 	_ "net/http/pprof"
 	"os"
+	"runtime"
 	"time"
 
 	crdv1alpha1 "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
@@ -44,7 +45,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/apimachinery/pkg/runtime"
+	kr "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -58,7 +59,7 @@ import (
 )
 
 var (
-	scheme     = runtime.NewScheme()
+	scheme     = kr.NewScheme()
 	setupLog   = ctrl.Log.WithName("setup")
 	syncPeriod = time.Minute * 30
 )
@@ -92,6 +93,8 @@ func main() {
 	var leaderLeaseRetryPeriod int
 	var outputPath string
 	var introspectBindAddr string
+	var setBlockProfileRate int
+	var setMutexProfileFraction int
 
 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080",
 		"The address the metric endpoint binds to.")
@@ -121,6 +124,10 @@ func main() {
 	flag.StringVar(&outputPath, "log-file", "stderr", "The path to redirect controller logs")
 	flag.StringVar(&introspectBindAddr, "introspect-bind-addr", ":22775",
 		"Port for serving the introspection API")
+	//To include every blocking event in the profile, pass rate = 1. To turn off profiling entirely, pass rate <= 0.
+	flag.IntVar(&setBlockProfileRate, "set-block-profile-rate", 5, "SetBlockProfileRate controls the fraction of goroutine block    ing events that are reported in the blocking profile.")
+	//To turn off profiling entirely, pass rate 0. To just read the current rate, pass rate < 0.
+	flag.IntVar(&setMutexProfileFraction, "SetMutexProfileFraction", 5, "SetMutexProfileFraction controls the fraction of mutex     contention events that are reported in the mutex profile.")
 
 	flag.Parse()
 
@@ -166,6 +173,8 @@ func main() {
 	// Profiler disabled by default, to enable set the enableProfiling argument
 	if enableProfiling {
 		// To use the profiler - https://golang.org/pkg/net/http/pprof/
+		runtime.SetMutexProfileFraction(setMutexProfileFraction)
+		runtime.SetBlockProfileRate(setBlockProfileRate)
 		go func() {
 			setupLog.Info("starting profiler",
 				"error", http.ListenAndServe("localhost:6060", nil))
