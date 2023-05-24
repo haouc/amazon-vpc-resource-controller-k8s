@@ -21,6 +21,8 @@ import (
 
 	vpcresourcesv1beta1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
+	"golang.org/x/exp/constraints"
+
 	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -31,7 +33,7 @@ import (
 )
 
 // Include checks if a string existing in a string slice and returns true or false.
-func Include(target string, values []string) bool {
+func Include[T constraints.Ordered](target T, values []T) bool {
 	for _, value := range values {
 		if value == target {
 			return true

@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 	vpcresourcesv1beta1 "github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1beta1"
 )
 
@@ -36,6 +37,14 @@ func TestInclude(t *testing.T) {
 
 	assert.True(t, Include(target, list))
 	assert.False(t, Include(offTarget, list))
+
+	feature := v1alpha1.SecurityGroupsForPods
+	features := []v1alpha1.FeatureName{
+		v1alpha1.SecurityGroupsForPods,
+		v1alpha1.CustomNetworking,
+	}
+
+	assert.True(t, Include(feature, features))
 }
 
 // TestRemoveDuplicatedSg tests if RemoveDuplicatedSg func works as expected.

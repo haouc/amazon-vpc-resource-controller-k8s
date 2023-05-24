@@ -78,6 +78,7 @@ const (
 	MinimumIPTarget                  = "minimum-ip-target"
 	// Since LeaderElectionNamespace and VpcCniConfigMapName may be different in the future
 	KubeSystemNamespace            = "kube-system"
+	KubeDefaultNamespace           = "default"
 	VpcCNIDaemonSetName            = "aws-node"
 	OldVPCControllerDeploymentName = "vpc-resource-controller"
 )
@@ -118,6 +119,8 @@ var (
 	CoolDownPeriod = time.Second * 30
 	// ENICleanUpInterval is the time interval between each dangling ENI clean up task
 	ENICleanUpInterval = time.Minute * 30
+	// CNINodeCleanUpInterval is the time interval between each dangling ENI clean up task
+	CNINodeCleanUpInterval = time.Hour * 12
 )
 
 // ResourceConfig is the configuration for each resource type

@@ -14,19 +14,24 @@
 package manager
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 
+	eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
+	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/api"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/condition"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
 	rcHealthz "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/healthz"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/node"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/resource"
+	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/utils"
 	asyncWorker "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/worker"
 	"github.com/google/uuid"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
@@ -132,10 +137,18 @@ func (m *manager) AddNode(nodeName string) error {
 	var newNode node.Node
 	var nodeFound bool
 
-	newNode, nodeFound = m.dataStore[k8sNode.Name]
+	_, nodeFound = m.dataStore[k8sNode.Name]
 	if nodeFound {
 		log.Info("node is already processed, not processing add event again")
 		return nil
+	}
+
+	if err = m.CreateCNINodeIfNotExisting(k8sNode); err != nil {
+		m.Log.Error(err, "Failed to create CNINode for k8sNode", "NodeName", k8sNode.Name)
+		return err
+	} else {
+		// use an event to notify users that a CNINode has been created for this node
+		utils.SendNodeEventWithNodeObject(m.wrapper.K8sAPI, k8sNode, utils.CNINodeCreatedReason, "A new CNINode was created for this node", v1.EventTypeNormal, m.Log)
 	}
 
 	shouldManage := m.isSelectedForManagement(k8sNode)
@@ -165,6 +178,24 @@ func (m *manager) AddNode(nodeName string) error {
 		nodeName: nodeName,
 	})
 	return nil
+}
+
+func (m *manager) CreateCNINodeIfNotExisting(node *v1.Node) error {
+	if cniNode, err := m.wrapper.K8sAPI.GetCNINode(node.Name, config.KubeDefaultNamespace); err != nil {
+		m.Log.Info("Failed finding CNINode as a creating check", "Error", err)
+		if apierrors.IsNotFound(err) {
+			m.Log.Info("Will create a new CNINode", "CNINodeName", node.Name)
+			return m.wrapper.K8sAPI.CreateCNINode(node)
+		}
+		return err
+	} else {
+		if cniNode != nil && cniNode.Name == node.Name {
+			m.Log.Info("The CNINode is already existing", "CNINode", cniNode)
+		} else {
+			m.Log.Error(errors.New("API error caused unmatched CNINode"), "Found existing unmatched CNINode when creating CNINode", "NodeName", node.Name)
+		}
+		return nil
+	}
 }
 
 // UpdateNode updates the node object and, if the node is previously un-managed and now
@@ -281,8 +312,14 @@ func (m *manager) DeleteNode(nodeName string) error {
 // updateSubnetIfUsingENIConfig updates the subnet id for the node to the subnet specified in ENIConfig if the node is
 // using custom networking
 func (m *manager) updateSubnetIfUsingENIConfig(cachedNode node.Node, k8sNode *v1.Node) error {
-	eniConfigName, isPresent := k8sNode.Labels[config.CustomNetworkingLabel]
-	if isPresent {
+	_, isPresent := k8sNode.Labels[config.CustomNetworkingLabel]
+	if isPresent || m.customNetworkEnabledInCNINode(k8sNode) {
+		eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(*k8sNode)
+		fmt.Printf("Before error check: Variable eniConfigName: %v\n", eniConfigName)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Variable eniConfigName: %v\n", eniConfigName)
 		eniConfig, err := m.wrapper.K8sAPI.GetENIConfig(eniConfigName)
 		if err != nil {
 			return fmt.Errorf("failed to find the ENIConfig %s: %v", eniConfigName, err)
@@ -357,7 +394,7 @@ func (m *manager) isSelectedForManagement(v1node *v1.Node) bool {
 		return false
 	}
 
-	return (isWindowsNode(v1node) && m.conditions.IsWindowsIPAMEnabled()) || canAttachTrunk(v1node)
+	return (isWindowsNode(v1node) && m.conditions.IsWindowsIPAMEnabled()) || m.canAttachTrunk(v1node)
 }
 
 // GetNodeInstanceID returns the EC2 instance ID of a node
@@ -401,9 +438,27 @@ func isWindowsNode(node *v1.Node) bool {
 }
 
 // canAttachTrunk returns true if the node has capability to attach a Trunk ENI
-func canAttachTrunk(node *v1.Node) bool {
+func (m *manager) canAttachTrunk(node *v1.Node) bool {
 	_, ok := node.Labels[config.HasTrunkAttachedLabel]
-	return ok
+	return ok || m.trunkEnabledInCNINode(node)
+}
+
+func (m *manager) trunkEnabledInCNINode(node *v1.Node) bool {
+	if cniNode, err := m.wrapper.K8sAPI.GetCNINode(node.Name, config.KubeDefaultNamespace); err == nil {
+		if utils.Include(v1alpha1.SecurityGroupsForPods, cniNode.Spec.Features) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *manager) customNetworkEnabledInCNINode(node *v1.Node) bool {
+	if cniNode, err := m.wrapper.K8sAPI.GetCNINode(node.Name, config.KubeDefaultNamespace); err == nil {
+		if utils.Include(v1alpha1.CustomNetworking, cniNode.Spec.Features) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *manager) removeNodeSafe(nodeName string) {

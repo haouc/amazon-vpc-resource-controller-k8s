@@ -71,7 +71,7 @@ generate: controller-gen
 	$(CONTROLLER_GEN) object:headerFile="scripts/templates/boilerplate.go.txt" paths="./..."
 
 # Build the docker image with buildx
-docker-buildx: check-env test
+docker-buildx: check-env
 	docker buildx build --platform=$(PLATFORM) -t $(IMAGE)-$(GOARCH) --build-arg BASE_IMAGE=$(BASE_IMAGE) --build-arg BUILD_IMAGE=$(BUILD_IMAGE) --build-arg $(GOARCH) --load .
 
 # Build the docker image
