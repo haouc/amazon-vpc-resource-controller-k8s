@@ -13,6 +13,7 @@ const (
 	CNINodeCreatedReason                = "CNINodeCreation"
 	NodeTrunkInitiatedReason            = "NodeTrunkInitiated"
 	NodeTrunkFailedInitializationReason = "NodeTrunkFailedInit"
+	EniConfigNameNotFoundReason         = "EniConfigNameNotFound"
 )
 
 func SendNodeEventWithNodeName(client k8s.K8sWrapper, nodeName, reason, msg, eventType string, logger logr.Logger) {

@@ -20,7 +20,6 @@ import (
 	"strings"
 	"sync"
 
-	eniconfig "github.com/aws/amazon-vpc-cni-k8s/pkg/eniconfig"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/api"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/condition"
@@ -32,6 +31,7 @@ import (
 	asyncWorker "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/worker"
 	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
@@ -312,14 +312,22 @@ func (m *manager) DeleteNode(nodeName string) error {
 // updateSubnetIfUsingENIConfig updates the subnet id for the node to the subnet specified in ENIConfig if the node is
 // using custom networking
 func (m *manager) updateSubnetIfUsingENIConfig(cachedNode node.Node, k8sNode *v1.Node) error {
-	_, isPresent := k8sNode.Labels[config.CustomNetworkingLabel]
+	eniConfigName, isPresent := k8sNode.Labels[config.CustomNetworkingLabel]
 	if isPresent || m.customNetworkEnabledInCNINode(k8sNode) {
-		eniConfigName, err := eniconfig.GetNodeSpecificENIConfigName(*k8sNode)
-		fmt.Printf("Before error check: Variable eniConfigName: %v\n", eniConfigName)
-		if err != nil {
-			return err
+		if !isPresent {
+			var err error
+			eniConfigName, err = m.GetEniConfigNameFromCNINode(k8sNode)
+			// if we couldn't find the name from CNINode, this should be a misconfiguration
+			// as long as the feature is registered in CNINode, we couldn't easily use "" as eniconfig name
+			// when not able to find the name from CNINode.
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					utils.SendNodeEventWithNodeObject(
+						m.wrapper.K8sAPI, k8sNode, utils.EniConfigNameNotFoundReason, err.Error(), v1.EventTypeWarning, m.Log)
+				}
+				return err
+			}
 		}
-		fmt.Printf("Variable eniConfigName: %v\n", eniConfigName)
 		eniConfig, err := m.wrapper.K8sAPI.GetENIConfig(eniConfigName)
 		if err != nil {
 			return fmt.Errorf("failed to find the ENIConfig %s: %v", eniConfigName, err)
@@ -335,6 +343,20 @@ func (m *manager) updateSubnetIfUsingENIConfig(cachedNode node.Node, k8sNode *v1
 		cachedNode.UpdateCustomNetworkingSpecs("", nil)
 	}
 	return nil
+}
+
+func (m *manager) GetEniConfigNameFromCNINode(node *v1.Node) (string, error) {
+	cniNode, err := m.wrapper.K8sAPI.GetCNINode(node.Name, config.KubeDefaultNamespace)
+	if err != nil {
+		return "", err
+	}
+	for _, feature := range cniNode.Spec.Features {
+		if feature.Name == v1alpha1.CustomNetworking && feature.Value != "" {
+			return feature.Value, nil
+		}
+	}
+
+	return "", apierrors.NewNotFound(schema.GroupResource{}, "couldn't find custom networking eniconfig name defined by aws-node")
 }
 
 // performAsyncOperation performs the operation on a node without taking the node manager lock
@@ -445,7 +467,11 @@ func (m *manager) canAttachTrunk(node *v1.Node) bool {
 
 func (m *manager) trunkEnabledInCNINode(node *v1.Node) bool {
 	if cniNode, err := m.wrapper.K8sAPI.GetCNINode(node.Name, config.KubeDefaultNamespace); err == nil {
-		if utils.Include(v1alpha1.SecurityGroupsForPods, cniNode.Spec.Features) {
+		var names []v1alpha1.FeatureName
+		for _, feature := range cniNode.Spec.Features {
+			names = append(names, feature.Name)
+		}
+		if utils.Include(v1alpha1.SecurityGroupsForPods, names) {
 			return true
 		}
 	}
@@ -454,7 +480,11 @@ func (m *manager) trunkEnabledInCNINode(node *v1.Node) bool {
 
 func (m *manager) customNetworkEnabledInCNINode(node *v1.Node) bool {
 	if cniNode, err := m.wrapper.K8sAPI.GetCNINode(node.Name, config.KubeDefaultNamespace); err == nil {
-		if utils.Include(v1alpha1.CustomNetworking, cniNode.Spec.Features) {
+		var names []v1alpha1.FeatureName
+		for _, feature := range cniNode.Spec.Features {
+			names = append(names, feature.Name)
+		}
+		if utils.Include(v1alpha1.CustomNetworking, names) {
 			return true
 		}
 	}

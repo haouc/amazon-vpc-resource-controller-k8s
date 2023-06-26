@@ -41,8 +41,10 @@ func TestCNINodeReconciler_Reconcile_UpdateCNINode_TrunkEnabled(t *testing.T) {
 		},
 
 		Spec: v1alpha1.CNINodeSpec{
-			Features: []v1alpha1.FeatureName{
-				v1alpha1.SecurityGroupsForPods,
+			Features: []v1alpha1.Feature{
+				{
+					Name: v1alpha1.SecurityGroupsForPods,
+				},
 			},
 		},
 	}

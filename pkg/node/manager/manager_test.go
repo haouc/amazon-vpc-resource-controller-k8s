@@ -284,7 +284,6 @@ func Test_AddNode_CustomNetworking_CNINode(t *testing.T) {
 	}
 
 	nodeWithENIConfig := v1Node.DeepCopy()
-	nodeWithENIConfig.Labels["vpc.amazonaws.com/externalEniConfig"] = eniConfigName
 
 	mock.MockK8sAPI.EXPECT().GetNode(nodeName).Return(nodeWithENIConfig, nil)
 	mock.MockK8sAPI.EXPECT().BroadcastEvent(nodeWithENIConfig, utils.CNINodeCreatedReason, "A new CNINode was created for this node", v1.EventTypeNormal).Times(1)
@@ -293,21 +292,60 @@ func Test_AddNode_CustomNetworking_CNINode(t *testing.T) {
 	mock.MockK8sAPI.EXPECT().CreateCNINode(nodeWithENIConfig).Return(nil).Times(1)
 	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
+			Features: []rcV1alpha1.Feature{{Name: rcV1alpha1.CustomNetworking, Value: eniConfigName}},
 		},
 	}, apierrors.NewNotFound(schema.GroupResource{Group: "vpcresources.k8s.aws", Resource: "1"}, "test"))
 	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(
 		&rcV1alpha1.CNINode{
 			ObjectMeta: metav1.ObjectMeta{Name: nodeWithENIConfig.Name},
 			Spec: rcV1alpha1.CNINodeSpec{
-				Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
+				Features: []rcV1alpha1.Feature{{Name: rcV1alpha1.CustomNetworking, Value: eniConfigName}},
 			},
 		}, nil,
-	)
+	).Times(2)
 	err := mock.Manager.AddNode(nodeName)
 	assert.NoError(t, err)
 	assert.Contains(t, mock.Manager.dataStore, nodeName)
 	assert.True(t, AreNodesEqual(mock.Manager.dataStore[nodeName], managedNode))
+}
+
+func Test_AddNode_CustomNetworking_CNINode_No_EniConfigName(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mock := NewMock(ctrl, map[string]node.Node{})
+
+	job := AsyncOperationJob{
+		op:       Init,
+		nodeName: nodeName,
+		node:     managedNode,
+	}
+
+	nodeWithENIConfig := v1Node.DeepCopy()
+
+	mock.MockK8sAPI.EXPECT().GetNode(nodeName).Return(nodeWithENIConfig, nil)
+	mock.MockK8sAPI.EXPECT().BroadcastEvent(nodeWithENIConfig, utils.CNINodeCreatedReason, "A new CNINode was created for this node", v1.EventTypeNormal).Times(1)
+	msg := apierrors.NewNotFound(schema.GroupResource{}, "couldn't find custom networking eniconfig name defined by aws-node").Error()
+	mock.MockK8sAPI.EXPECT().BroadcastEvent(nodeWithENIConfig, utils.EniConfigNameNotFoundReason, msg, v1.EventTypeWarning).Times(1)
+	mock.MockK8sAPI.EXPECT().GetENIConfig(eniConfigName).Return(eniConfig, nil).Times(0)
+	mock.MockWorker.EXPECT().SubmitJob(gomock.All(NewAsyncOperationMatcher(job))).Times(0)
+	mock.MockK8sAPI.EXPECT().CreateCNINode(nodeWithENIConfig).Return(nil).Times(1)
+	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
+		Spec: rcV1alpha1.CNINodeSpec{
+			Features: []rcV1alpha1.Feature{{Name: rcV1alpha1.CustomNetworking}},
+		},
+	}, apierrors.NewNotFound(schema.GroupResource{Group: "vpcresources.k8s.aws", Resource: "1"}, "test"))
+	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(
+		&rcV1alpha1.CNINode{
+			ObjectMeta: metav1.ObjectMeta{Name: nodeWithENIConfig.Name},
+			Spec: rcV1alpha1.CNINodeSpec{
+				Features: []rcV1alpha1.Feature{{Name: rcV1alpha1.CustomNetworking}},
+			},
+		}, nil,
+	).Times(2)
+	err := mock.Manager.AddNode(nodeName)
+	assert.Error(t, err)
+	assert.True(t, apierrors.IsNotFound(err))
 }
 
 func Test_AddNode_CustomNetworking_NodeLabel(t *testing.T) {
@@ -324,8 +362,6 @@ func Test_AddNode_CustomNetworking_NodeLabel(t *testing.T) {
 
 	nodeWithENIConfig := v1Node.DeepCopy()
 	nodeWithENIConfig.Labels[config.CustomNetworkingLabel] = eniConfigName
-	// this is only applied in UT since in runtime the AddNode will call VPC CNI API to check on CNI ENVs
-	nodeWithENIConfig.Labels["vpc.amazonaws.com/externalEniConfig"] = eniConfigName
 
 	mock.MockK8sAPI.EXPECT().GetNode(nodeName).Return(nodeWithENIConfig, nil)
 	mock.MockK8sAPI.EXPECT().BroadcastEvent(nodeWithENIConfig, utils.CNINodeCreatedReason, "A new CNINode was created for this node", v1.EventTypeNormal).Times(1)
@@ -334,17 +370,12 @@ func Test_AddNode_CustomNetworking_NodeLabel(t *testing.T) {
 	mock.MockK8sAPI.EXPECT().CreateCNINode(nodeWithENIConfig).Return(nil).Times(1)
 	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
+			Features: []rcV1alpha1.Feature{{Name: rcV1alpha1.CustomNetworking}},
 		},
-	}, apierrors.NewNotFound(schema.GroupResource{Group: "vpcresources.k8s.aws", Resource: "1"}, "test"))
+	}, apierrors.NewNotFound(schema.GroupResource{Group: "vpcresources.k8s.aws", Resource: "1"}, "test")).Times(1)
 	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(
-		&rcV1alpha1.CNINode{
-			ObjectMeta: metav1.ObjectMeta{Name: nodeWithENIConfig.Name},
-			Spec: rcV1alpha1.CNINodeSpec{
-				Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
-			},
-		}, nil,
-	).Times(0) // using node label and thus call GetCNINode only once
+		&rcV1alpha1.CNINode{}, nil,
+	).Times(0) // using label and shouldn't need to query CNINode feature
 
 	err := mock.Manager.AddNode(nodeName)
 	assert.NoError(t, err)
@@ -368,7 +399,6 @@ func Test_AddNode_CustomNetworking_Incorrect_ENIConfig(t *testing.T) {
 
 	nodeWithENIConfig := v1Node.DeepCopy()
 	nodeWithENIConfig.Labels[config.CustomNetworkingLabel] = eniConfigName
-	nodeWithENIConfig.Labels["vpc.amazonaws.com/externalEniConfig"] = eniConfigName
 
 	mock.MockK8sAPI.EXPECT().GetNode(nodeName).Return(nodeWithENIConfig, nil)
 	mock.MockK8sAPI.EXPECT().GetENIConfig(eniConfigName).Return(eniConfig_empty_sg, nil)
@@ -377,18 +407,12 @@ func Test_AddNode_CustomNetworking_Incorrect_ENIConfig(t *testing.T) {
 	mock.MockK8sAPI.EXPECT().CreateCNINode(nodeWithENIConfig).Return(nil).Times(1)
 	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
+			Features: []rcV1alpha1.Feature{{Name: rcV1alpha1.CustomNetworking}},
 		},
 	}, apierrors.NewNotFound(schema.GroupResource{Group: "vpcresources.k8s.aws", Resource: "1"}, "test"))
 	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(
-		&rcV1alpha1.CNINode{
-			ObjectMeta: metav1.ObjectMeta{Name: nodeWithENIConfig.Name},
-			Spec: rcV1alpha1.CNINodeSpec{
-				Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
-			},
-		}, nil,
-	).Times(0) // using node label and thus call GetCNINode only once
-
+		&rcV1alpha1.CNINode{}, nil,
+	).Times(0)
 	err := mock.Manager.AddNode(nodeName)
 	assert.NoError(t, err)
 	assert.Contains(t, mock.Manager.dataStore, nodeName)
@@ -404,25 +428,13 @@ func Test_AddNode_CustomNetworking_NoENIConfig(t *testing.T) {
 
 	nodeWithENIConfig := v1Node.DeepCopy()
 	nodeWithENIConfig.Labels[config.CustomNetworkingLabel] = eniConfigName
-	nodeWithENIConfig.Labels["vpc.amazonaws.com/externalEniConfig"] = eniConfigName
 
 	mock.MockK8sAPI.EXPECT().GetNode(nodeName).Return(nodeWithENIConfig, nil)
 	mock.MockK8sAPI.EXPECT().BroadcastEvent(nodeWithENIConfig, utils.CNINodeCreatedReason, "A new CNINode was created for this node", v1.EventTypeNormal).Times(1)
 	mock.MockK8sAPI.EXPECT().CreateCNINode(nodeWithENIConfig).Return(nil).Times(1)
 	mock.MockK8sAPI.EXPECT().GetENIConfig(eniConfigName).Return(nil, mockError)
-	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
-		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
-		},
-	}, apierrors.NewNotFound(schema.GroupResource{Group: "vpcresources.k8s.aws", Resource: "1"}, "test"))
-	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(
-		&rcV1alpha1.CNINode{
-			ObjectMeta: metav1.ObjectMeta{Name: nodeWithENIConfig.Name},
-			Spec: rcV1alpha1.CNINodeSpec{
-				Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
-			},
-		}, nil,
-	).Times(0)
+	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{}, apierrors.NewNotFound(schema.GroupResource{Group: "vpcresources.k8s.aws", Resource: "1"}, "test"))
+	mock.MockK8sAPI.EXPECT().GetCNINode(nodeWithENIConfig.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{}, nil).Times(0)
 
 	err := mock.Manager.AddNode(nodeName)
 	assert.NotContains(t, mock.Manager.dataStore, nodeName)
@@ -445,7 +457,7 @@ func Test_UpdateNode_Managed(t *testing.T) {
 	mock.MockWorker.EXPECT().SubmitJob(gomock.All(NewAsyncOperationMatcher(job)))
 	mock.MockK8sAPI.EXPECT().GetCNINode(v1Node.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{},
+			Features: []rcV1alpha1.Feature{},
 		},
 	}, nil).Times(1)
 
@@ -513,7 +525,7 @@ func Test_UpdateNode_UnManagedToManaged(t *testing.T) {
 	mock.MockWorker.EXPECT().SubmitJob(gomock.All(NewAsyncOperationMatcher(job)))
 	mock.MockK8sAPI.EXPECT().GetCNINode(v1Node.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{},
+			Features: []rcV1alpha1.Feature{},
 		},
 	}, nil).Times(1)
 
@@ -539,15 +551,12 @@ func Test_UpdateNode_UnManagedToManaged_WithENIConfig_NodeLabel(t *testing.T) {
 
 	nodeWithENIConfig := v1Node.DeepCopy()
 	nodeWithENIConfig.Labels[config.CustomNetworkingLabel] = eniConfigName
-	nodeWithENIConfig.Labels["vpc.amazonaws.com/externalEniConfig"] = eniConfigName
 
 	mock.MockK8sAPI.EXPECT().GetNode(v1Node.Name).Return(nodeWithENIConfig, nil)
 	mock.MockK8sAPI.EXPECT().GetENIConfig(eniConfigName).Return(eniConfig, nil)
 	mock.MockWorker.EXPECT().SubmitJob(gomock.All(NewAsyncOperationMatcher(job)))
 	mock.MockK8sAPI.EXPECT().GetCNINode(v1Node.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
-		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
-		},
+		Spec: rcV1alpha1.CNINodeSpec{},
 	}, nil).Times(0)
 
 	err := mock.Manager.UpdateNode(v1Node.Name)
@@ -571,16 +580,15 @@ func Test_UpdateNode_UnManagedToManaged_WithENIConfig_CNINode(t *testing.T) {
 	}
 
 	nodeWithENIConfig := v1Node.DeepCopy()
-	nodeWithENIConfig.Labels["vpc.amazonaws.com/externalEniConfig"] = eniConfigName
 
 	mock.MockK8sAPI.EXPECT().GetNode(v1Node.Name).Return(nodeWithENIConfig, nil)
 	mock.MockK8sAPI.EXPECT().GetENIConfig(eniConfigName).Return(eniConfig, nil)
 	mock.MockWorker.EXPECT().SubmitJob(gomock.All(NewAsyncOperationMatcher(job)))
 	mock.MockK8sAPI.EXPECT().GetCNINode(v1Node.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{rcV1alpha1.CustomNetworking},
+			Features: []rcV1alpha1.Feature{{Name: rcV1alpha1.CustomNetworking, Value: eniConfigName}},
 		},
-	}, nil).Times(1)
+	}, nil).Times(2)
 
 	err := mock.Manager.UpdateNode(v1Node.Name)
 	assert.NoError(t, err)
@@ -711,8 +719,8 @@ func Test_isPodENICapacitySet_CNINode(t *testing.T) {
 		&rcV1alpha1.CNINode{
 			ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
 			Spec: rcV1alpha1.CNINodeSpec{
-				Features: []rcV1alpha1.FeatureName{
-					rcV1alpha1.SecurityGroupsForPods,
+				Features: []rcV1alpha1.Feature{
+					{Name: rcV1alpha1.SecurityGroupsForPods},
 				},
 			},
 		},
@@ -731,7 +739,7 @@ func Test_isPodENICapacitySet_Neg(t *testing.T) {
 	delete(v1NodeCopy.Labels, config.HasTrunkAttachedLabel)
 	mock.MockK8sAPI.EXPECT().GetCNINode(v1Node.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{},
+			Features: []rcV1alpha1.Feature{},
 		},
 	}, nil).Times(1)
 	isSet := mock.Manager.canAttachTrunk(v1NodeCopy)
@@ -819,7 +827,7 @@ func Test_UpdateNode_Windows_UnManagedToManaged(t *testing.T) {
 	// Windows node will also have a CNINode but Windows CNI will not update for features
 	mock.MockK8sAPI.EXPECT().GetCNINode(v1Node.Name, config.KubeDefaultNamespace).Return(&rcV1alpha1.CNINode{
 		Spec: rcV1alpha1.CNINodeSpec{
-			Features: []rcV1alpha1.FeatureName{},
+			Features: []rcV1alpha1.Feature{},
 		},
 	}, nil).Times(1)
 
