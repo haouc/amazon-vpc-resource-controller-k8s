@@ -85,7 +85,7 @@ func init() {
 // +kubebuilder:rbac:groups=apps,resources=deployments,namespace=kube-system,resourceNames=vpc-resource-controller,verbs=get;list;watch
 // +kubebuilder:rbac:groups=crd.k8s.amazonaws.com,resources=eniconfigs,verbs=get;list;watch
 // +kubebuilder:rbac:groups=vpcresources.k8s.aws,resources=securitygrouppolicies,verbs=get;list;watch
-// +kubebuilder:rbac:groups=vpcresources.k8s.aws,resources=cninodes,verbs=get;list;watch;create
+// +kubebuilder:rbac:groups=vpcresources.k8s.aws,resources=cninodes,verbs=get;list;watch;create;patch
 
 // Migration to leases based leader election
 // +kubebuilder:rbac:groups=coordination.k8s.io,resources=leases,namespace=kube-system,verbs=create
@@ -176,6 +176,7 @@ func main() {
 		"GitVersion", version.GitVersion,
 		"GitCommit", version.GitCommit,
 		"BuildDate", version.BuildDate,
+		"DevDebug", "Feb 12, 14:06 AM",
 	)
 
 	if clusterName == "" {

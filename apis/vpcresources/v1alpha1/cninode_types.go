@@ -37,9 +37,25 @@ type CNINodeSpec struct {
 	Features []Feature `json:"features,omitempty"`
 }
 
+type WarmBranchENI struct {
+	// BranchENId is the network interface id of the branch interface
+	ID string `json:"id,omitempty"`
+	// MacAdd is the MAC address of the network interface
+	MACAddr string `json:"macAddr,omitempty"`
+	// IPv4 and/or IPv6 address assigned to the branch Network interface
+	IPV4Addr string `json:"ipv4Addr,omitempty"`
+	IPV6Addr string `json:"ipv6Addr,omitempty"`
+	// VlanId is the VlanId of the branch network interface
+	VlanID int `json:"vlanId,omitempty"`
+	// SubnetCIDR is the CIDR block of the subnet
+	SubnetCIDR   string `json:"subnetCIDR,omitempty"`
+	SubnetV6CIDR string `json:"subnetV6CIDR,omitempty"`
+}
+
 // CNINodeStatus defines the managed VPC resources.
 type CNINodeStatus struct {
 	//TODO: add VPC resources which will be managed by this CRD and its finalizer
+	BranchENIs []WarmBranchENI `json:"branchenis,omitempty"`
 }
 
 // +kubebuilder:object:root=true

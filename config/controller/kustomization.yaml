@@ -7,6 +7,6 @@ namePrefix: local-
 # for Windows test, as it checks the same deployment name should not be deployed to enable Windows
 # IPAM
 images:
-- digest: latest
+- digest: sha256:f966c5cbbb292f3e23dc7827d3cd4864aec97e5109765c00da2509ce004f36de
   name: controller
-  newName: controller
+  newName: 744053100597.dkr.ecr.us-west-2.amazonaws.com/aws/amazon-vpc-resource-controller-k8s

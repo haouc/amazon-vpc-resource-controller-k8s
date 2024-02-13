@@ -15,6 +15,7 @@ package k8s
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
 	"github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
@@ -81,6 +82,7 @@ type K8sWrapper interface {
 	ListEvents(ops []client.ListOption) (*eventsv1.EventList, error)
 	GetCNINode(namespacedName types.NamespacedName) (*rcv1alpha1.CNINode, error)
 	CreateCNINode(node *v1.Node) error
+	UpdateCNINode(node *v1.Node, oldObj, newObj *rcv1alpha1.CNINode) error
 }
 
 // k8sWrapper is the wrapper object with the client
@@ -253,4 +255,9 @@ func (k *k8sWrapper) CreateCNINode(node *v1.Node) error {
 
 	// TODO: need think more if we should retry on "already exists" error.
 	return client.IgnoreAlreadyExists(k.cacheClient.Create(k.context, cniNode))
+}
+
+func (k *k8sWrapper) UpdateCNINode(node *v1.Node, oldObj, newObj *rcv1alpha1.CNINode) error {
+	fmt.Printf("k8s wrapper updateCNINode -- oldObj: %v, newObj: %v", *oldObj, *newObj)
+	return k.cacheClient.Patch(k.context, newObj, client.MergeFrom(oldObj))
 }

@@ -21,18 +21,24 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/apis/vpcresources/v1alpha1"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/ec2"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/ec2/api"
 	ec2Errors "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/errors"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/aws/vpc"
+	cnd "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/cni_node"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
+	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/k8s"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/provider/branch/cooldown"
+	"github.com/google/uuid"
 
 	"github.com/aws/aws-sdk-go/aws"
 	awsEC2 "github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-logr/logr"
 	"github.com/prometheus/client_golang/prometheus"
 	v1 "k8s.io/api/core/v1"
+	metaV1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -116,7 +122,8 @@ type trunkENI struct {
 	// branchENIs is the list of BranchENIs associated with the trunk
 	uidToBranchENIMap map[string][]*ENIDetails
 	// deleteQueue is the queue of ENIs that are being cooled down before being deleted
-	deleteQueue []*ENIDetails
+	deleteQueue    []*ENIDetails
+	cniNodeHandler *cnd.CNINodeHandler
 }
 
 // PodENI is a json convertible structure that stores the Branch ENI details that can be
@@ -155,7 +162,7 @@ type IntrospectSummaryResponse struct {
 }
 
 // NewTrunkENI returns a new Trunk ENI interface.
-func NewTrunkENI(logger logr.Logger, instance ec2.EC2Instance, helper api.EC2APIHelper) TrunkENI {
+func NewTrunkENI(logger logr.Logger, instance ec2.EC2Instance, helper api.EC2APIHelper, k8sClient k8s.K8sWrapper) TrunkENI {
 
 	availVlans := make([]bool, MaxAllocatableVlanIds)
 	// VlanID 0 cannot be assigned.
@@ -167,6 +174,7 @@ func NewTrunkENI(logger logr.Logger, instance ec2.EC2Instance, helper api.EC2API
 		ec2ApiHelper:      helper,
 		instance:          instance,
 		uidToBranchENIMap: make(map[string][]*ENIDetails),
+		cniNodeHandler:    cnd.New(k8sClient, logger),
 	}
 }
 
@@ -266,6 +274,7 @@ func (t *trunkENI) InitTrunk(instance ec2.EC2Instance, podList []v1.Pod) error {
 		t.uidToBranchENIMap[string(pod.UID)] = branchENIs
 	}
 
+	var freeENIs []ENIDetails
 	// Delete the branch ENI that don't belong to any pod.
 	for _, branchInterface := range associatedBranchInterfaces {
 		t.log.Info("pushing eni to delete queue as no pod owns it", "eni",
@@ -279,12 +288,58 @@ func (t *trunkENI) InitTrunk(instance ec2.EC2Instance, podList []v1.Pod) error {
 		}
 
 		// Even thought the ENI is going to be deleted still mark Vlan ID assigned as ENI will sit in cool down queue for a while
-		t.markVlanAssigned(vlanId)
-		t.pushENIToDeleteQueue(&ENIDetails{
-			ID:                *branchInterface.NetworkInterfaceId,
-			VlanID:            vlanId,
-			deletionTimeStamp: time.Now(),
-		})
+		// t.markVlanAssigned(vlanId)
+		// var v4Addr, v6Addr string
+		// if branchInterface.PrivateIpAddress != nil {
+		// 	v4Addr = *branchInterface.PrivateIpAddress
+		// }
+		// if branchInterface.Ipv6Address != nil {
+		// 	v6Addr = *branchInterface.Ipv6Address
+		// }
+		// t.log.Info("current interface", "interface", *branchInterface)
+		// newENI := ENIDetails{ID: *branchInterface.NetworkInterfaceId, MACAdd: *branchInterface.MacAddress,
+		// 	IPV4Addr: v4Addr, IPV6Addr: v6Addr, SubnetCIDR: t.instance.SubnetCidrBlock(),
+		// 	SubnetV6CIDR: t.instance.SubnetV6CidrBlock(), VlanID: vlanId}
+		// freeENIs = append(freeENIs, newENI)
+		// t.pushENIToDeleteQueue(&ENIDetails{
+		// 	ID:                *branchInterface.NetworkInterfaceId
+		// 	VlanID:            vlanId,
+		// 	deletionTimeStamp: time.Now(),
+		// })
+		t.deleteENI(
+			&ENIDetails{
+				ID:                *branchInterface.NetworkInterfaceId,
+				VlanID:            vlanId,
+				deletionTimeStamp: time.Now(),
+			},
+		)
+	}
+
+	if len(freeENIs) > 0 {
+		t.cniNodeHandler.AddBranchENIToWarmPool(t.instance.Name(), convertENIdetailToBranchENI(freeENIs))
+		t.log.Info("added branch ENIs from trunk init to CNINode warm pool", "enis", freeENIs)
+	}
+
+	if spots, err := t.cniNodeHandler.AvailableWarmPoolSpots(t.instance.Name(), t.instance.Type()); err == nil && spots > 0 {
+		var newENIs []ENIDetails
+		for spots > 0 {
+			t.log.Info("The CNINode has available spots to add new branch ENIs at node's trunk initialization", "CNINode", t.instance.Name(), "spots", spots)
+			uid := types.UID(uuid.New().String())
+			enis, err := t.CreateAndAssociateBranchENIs(&v1.Pod{
+				ObjectMeta: metaV1.ObjectMeta{Name: "warm-pool", Namespace: "default", UID: uid},
+			}, nil, 1)
+			delete(t.uidToBranchENIMap, string(uid))
+			if err == nil {
+				newENIs = append(newENIs, *enis[0])
+			} else {
+				t.log.Error(err, "creating branch ENI for warm-pool failed", "nodeName", t.instance.Name())
+			}
+			spots--
+			t.log.Info("created a new branch ENI for CNINode warm pool", "enis", enis)
+		}
+		if err = t.cniNodeHandler.AddBranchENIToWarmPool(t.instance.Name(), convertENIdetailToBranchENI(newENIs)); err != nil {
+			t.log.Error(err, "adding branch ENI for CNINode warm pool failed", "nodeName", t.instance.Name())
+		}
 	}
 
 	log.V(1).Info("successfully initialized trunk with all associated branch interfaces",
@@ -426,12 +481,15 @@ func (t *trunkENI) CreateAndAssociateBranchENIs(pod *v1.Pod, securityGroups []st
 func (t *trunkENI) DeleteAllBranchENIs() {
 	// Delete all the branch used by the pod on this trunk ENI
 	// Since after this call, the trunk will be removed from cache. No need to clean up its branch map
+	deletedENIs := make(map[string]*ENIDetails)
 	for _, podENIs := range t.uidToBranchENIMap {
 		for _, eni := range podENIs {
 			err := t.deleteENI(eni)
 			if err != nil {
 				// Just log, if the ENI still exists it can be removed by the dangling ENI cleaner routine
 				t.log.Error(err, "failed to delete eni", "eni id", eni.ID)
+			} else {
+				deletedENIs[eni.ID] = eni
 			}
 		}
 	}
@@ -442,7 +500,31 @@ func (t *trunkENI) DeleteAllBranchENIs() {
 		if err != nil {
 			// Just log, if the ENI still exists it can be removed by the dangling ENI cleaner routine
 			t.log.Error(err, "failed to delete eni", "eni id", eni.ID)
+		} else {
+			deletedENIs[eni.ID] = eni
 		}
+	}
+
+	// make sure all warmed branch ENIs are also deleted
+	// no need to update the CNINode since it will be auto deleted with node deletion
+	warmedENIs := t.cniNodeHandler.ListAllWarmedBranchENIs(t.instance.Name())
+	t.log.Info("upon node deletion, all warmed branch ENIs needed to be deleted", "nodeName", t.instance.Name(), "brachENIs", warmedENIs)
+	for _, eni := range convertBranchENIToENIdetail(warmedENIs) {
+		if _, yes := deletedENIs[eni.ID]; !yes {
+			err := t.deleteENI(eni)
+			t.log.Info("deleting warmed branch eni", "eni", eni)
+			if err != nil {
+				// Just log, if the ENI still exists it can be removed by the dangling ENI cleaner routine
+				t.log.Error(err, "failed to delete eni", "eni id", eni.ID)
+			} else {
+				deletedENIs[eni.ID] = eni
+			}
+		}
+	}
+
+	// actually not needed since this function is triggered by node deletion
+	for _, eni := range deletedENIs {
+		t.freeVlanId(eni.VlanID)
 	}
 }
 
@@ -686,4 +768,38 @@ func (t *trunkENI) Introspect() IntrospectResponse {
 		response.DeleteQueue = append(response.DeleteQueue, *eni)
 	}
 	return response
+}
+
+func convertENIdetailToBranchENI(enis []ENIDetails) []v1alpha1.WarmBranchENI {
+	var branches []v1alpha1.WarmBranchENI
+	for _, eni := range enis {
+		branch := v1alpha1.WarmBranchENI{
+			ID:           eni.ID,
+			MACAddr:      eni.MACAdd,
+			IPV4Addr:     eni.IPV4Addr,
+			IPV6Addr:     eni.IPV6Addr,
+			VlanID:       eni.VlanID,
+			SubnetCIDR:   eni.SubnetCIDR,
+			SubnetV6CIDR: eni.SubnetV6CIDR,
+		}
+		branches = append(branches, branch)
+	}
+	return branches
+}
+
+func convertBranchENIToENIdetail(enis []v1alpha1.WarmBranchENI) []*ENIDetails {
+	var branches []*ENIDetails
+	for _, eni := range enis {
+		branch := &ENIDetails{
+			ID:           eni.ID,
+			MACAdd:       eni.MACAddr,
+			IPV4Addr:     eni.IPV4Addr,
+			IPV6Addr:     eni.IPV6Addr,
+			VlanID:       eni.VlanID,
+			SubnetCIDR:   eni.SubnetCIDR,
+			SubnetV6CIDR: eni.SubnetV6CIDR,
+		}
+		branches = append(branches, branch)
+	}
+	return branches
 }

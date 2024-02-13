@@ -49,7 +49,7 @@ image: ## Build the images using ko build
 toolchain: ## Install developer toolchain
 	./hack/toolchain.sh
 
-apply: image check-deployment-env check-env ## Deploy controller to ~/.kube/config
+apply: image check-deployment-env check-env verify ## Deploy controller to ~/.kube/config
 	eksctl create iamserviceaccount vpc-resource-controller --namespace kube-system --cluster ${CLUSTER_NAME} --region ${AWS_REGION} \
 		--role-name VPCResourceControllerRole \
 		--attach-policy-arn=arn:aws:iam::aws:policy/AdministratorAccess \
