@@ -147,6 +147,11 @@ func (i *ec2Instance) LoadDetails(ec2APIHelper api.EC2APIHelper) error {
 	// we want to make sure to use the smaller number between instance max supported interfaces and the default card max supported interfaces
 	maxInterfaces := utils.Minimum(int64(limits.Interface), defaultNetworkCardLimit)
 
+	// if EC2 increases the instance max count of interfaces, we need override the hardcoded max count
+	// if EC2 decreases the instance max count of interfaces, we will be broken later on when we assign trunk to the instance
+	// since we can't use a smaller value than the hardcoded limit based on instance loaded interfaces length
+	maxInterfaces = utils.Maximum(maxInterfaces, int64(len(instance.NetworkInterfaces)))
+
 	i.deviceIndexes = make([]bool, int(maxInterfaces))
 	for _, nwInterface := range instance.NetworkInterfaces {
 		index := nwInterface.Attachment.DeviceIndex
