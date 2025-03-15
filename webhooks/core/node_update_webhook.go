@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/controllers/apps"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/condition"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
 	rcHealthz "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/healthz"
@@ -15,17 +16,19 @@ import (
 )
 
 type NodeUpdateWebhook struct {
-	decoder   admission.Decoder
-	Condition condition.Conditions
-	Log       logr.Logger
-	Checker   healthz.Checker
+	decoder       admission.Decoder
+	Condition     condition.Conditions
+	Log           logr.Logger
+	Checker       healthz.Checker
+	sgpController *apps.SGPReconciler
 }
 
-func NewNodeUpdateWebhook(condition condition.Conditions, log logr.Logger, d admission.Decoder, healthzHandler *rcHealthz.HealthzHandler) *NodeUpdateWebhook {
+func NewNodeUpdateWebhook(condition condition.Conditions, log logr.Logger, d admission.Decoder, healthzHandler *rcHealthz.HealthzHandler, sgpController *apps.SGPReconciler) *NodeUpdateWebhook {
 	nodeUpdateWebhook := &NodeUpdateWebhook{
-		Condition: condition,
-		Log:       log,
-		decoder:   d,
+		Condition:     condition,
+		Log:           log,
+		decoder:       d,
+		sgpController: sgpController,
 	}
 
 	// add health check on subpath for node validation webhook
@@ -46,6 +49,10 @@ const awsNodeUsername = "system:serviceaccount:kube-system:aws-node"
 // coming from the aws-node Service Account. It also ensures the updates are allowed only
 // when the Security Group for Pod feature is enabled.
 func (a *NodeUpdateWebhook) Handle(_ context.Context, req admission.Request) admission.Response {
+	if !a.sgpController.GetSGPEnabledFlag() {
+		return admission.Allowed("Security Group for Pods is not enabled")
+	}
+
 	// Allow all requests that are not from aws-node username
 	if req.UserInfo.Username != awsNodeUsername {
 		return admission.Allowed("")

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/controllers/apps"
 	mock_condition "github.com/aws/amazon-vpc-resource-controller-k8s/mocks/amazon-vcp-resource-controller-k8s/pkg/condition"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
 	"github.com/golang/mock/gomock"
@@ -241,6 +242,9 @@ func TestNodeUpdateWebhook_Handle(t *testing.T) {
 					decoder:   decoder,
 					Log:       zap.New(),
 					Condition: mock.MockCondition,
+					sgpController: &apps.SGPReconciler{
+						SGPEnabledFlag: true,
+					},
 				}
 
 				if tt.mockInvocation != nil {

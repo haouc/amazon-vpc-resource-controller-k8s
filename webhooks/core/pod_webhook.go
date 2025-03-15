@@ -25,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/controllers/apps"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/condition"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
 	rcHealthz "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/healthz"
@@ -41,10 +42,11 @@ const (
 
 // PodResourceInjector injects resources into Pods
 type PodMutationWebHook struct {
-	decoder   admission.Decoder
-	SGPAPI    utils.SecurityGroupForPodsAPI
-	Log       logr.Logger
-	Condition condition.Conditions
+	decoder       admission.Decoder
+	SGPAPI        utils.SecurityGroupForPodsAPI
+	Log           logr.Logger
+	Condition     condition.Conditions
+	sgpController *apps.SGPReconciler
 }
 
 func NewPodMutationWebHook(
@@ -53,12 +55,14 @@ func NewPodMutationWebHook(
 	condition condition.Conditions,
 	d admission.Decoder,
 	healthzHandler *rcHealthz.HealthzHandler,
+	sgpController *apps.SGPReconciler,
 ) *PodMutationWebHook {
 	podWebhook := &PodMutationWebHook{
-		SGPAPI:    sgpAPI,
-		Log:       log,
-		Condition: condition,
-		decoder:   d,
+		SGPAPI:        sgpAPI,
+		Log:           log,
+		Condition:     condition,
+		decoder:       d,
+		sgpController: sgpController,
 	}
 	// add health check on subpath for pod mutation webhook
 	healthzHandler.AddControllersHealthCheckers(
@@ -95,7 +99,11 @@ func (i *PodMutationWebHook) Handle(_ context.Context, req admission.Request) ad
 	case Fargate:
 		response = i.HandleFargatePod(req, pod, log)
 	case Linux:
-		response = i.HandleLinuxPod(req, pod, log)
+		if !i.sgpController.GetSGPEnabledFlag() {
+			response = admission.Allowed("Security group for pods is not enabled for linux pods")
+		} else {
+			response = i.HandleLinuxPod(req, pod, log)
+		}
 	case Windows:
 		response = i.HandleWindowsPod(req, pod, log)
 	default:

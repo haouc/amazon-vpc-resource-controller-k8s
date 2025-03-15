@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/controllers/apps"
 	mock_condition "github.com/aws/amazon-vpc-resource-controller-k8s/mocks/amazon-vcp-resource-controller-k8s/pkg/condition"
 	mock_utils "github.com/aws/amazon-vpc-resource-controller-k8s/mocks/amazon-vcp-resource-controller-k8s/pkg/utils"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
@@ -524,6 +525,9 @@ func TestPodMutationWebHook_Handle(t *testing.T) {
 				Log:       zap.New(),
 				SGPAPI:    mock.SGPMock,
 				Condition: mock.ConditionMock,
+				sgpController: &apps.SGPReconciler{
+					SGPEnabledFlag: true,
+				},
 			}
 
 			if tt.mockInvocation != nil {

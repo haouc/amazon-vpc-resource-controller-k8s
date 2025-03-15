@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/aws/amazon-vpc-resource-controller-k8s/controllers/apps"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/condition"
 	"github.com/aws/amazon-vpc-resource-controller-k8s/pkg/config"
 	rcHealthz "github.com/aws/amazon-vpc-resource-controller-k8s/pkg/healthz"
@@ -34,17 +35,19 @@ import (
 // AnnotationValidator validates the resource allocated to the Pod via annotations. The WebHook
 // prevents unauthorized user from modifying/removing these Annotations.
 type AnnotationValidator struct {
-	decoder   admission.Decoder
-	Condition condition.Conditions
-	Log       logr.Logger
-	Checker   healthz.Checker
+	decoder       admission.Decoder
+	Condition     condition.Conditions
+	Log           logr.Logger
+	Checker       healthz.Checker
+	sgpController *apps.SGPReconciler
 }
 
-func NewAnnotationValidator(condition condition.Conditions, log logr.Logger, d admission.Decoder, healthzHandler *rcHealthz.HealthzHandler) *AnnotationValidator {
+func NewAnnotationValidator(condition condition.Conditions, log logr.Logger, d admission.Decoder, healthzHandler *rcHealthz.HealthzHandler, sgpController *apps.SGPReconciler) *AnnotationValidator {
 	annotationValidator := &AnnotationValidator{
-		Condition: condition,
-		Log:       log,
-		decoder:   d,
+		Condition:     condition,
+		Log:           log,
+		decoder:       d,
+		sgpController: sgpController,
 	}
 
 	// add health check on subpath for pod annotation validating webhook
@@ -67,16 +70,28 @@ const vpcControllerUserName = "eks:vpc-resource-controller"
 // +kubebuilder:rbac:groups=core,resources=serviceaccounts,verbs=get;list;watch
 
 func (a *AnnotationValidator) Handle(_ context.Context, req admission.Request) admission.Response {
-	var response admission.Response
+	pod := &corev1.Pod{}
+	if req.Operation == admissionv1.Create || req.Operation == admissionv1.Update {
+		if err := a.decoder.DecodeRaw(req.Object, pod); err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
 
-	a.Log.V(1).Info("annotation validating webhook request",
-		"request", req)
+		if WhichPod(pod) == Linux && !a.sgpController.GetSGPEnabledFlag() {
+			return admission.Allowed("Security groups for pod is not enabled for linux pods")
+		}
+	}
+
+	var response admission.Response
 
 	switch req.Operation {
 	case admissionv1.Create:
-		response = a.handleCreate(req)
+		response = a.handleCreate(pod)
 	case admissionv1.Update:
-		response = a.handleUpdate(req)
+		oldPod := &corev1.Pod{}
+		if err := a.decoder.DecodeRaw(req.OldObject, oldPod); err != nil {
+			return admission.Errored(http.StatusBadRequest, err)
+		}
+		response = a.handleUpdate(req.UserInfo.Username, pod, oldPod)
 	default:
 		response = admission.Allowed("")
 	}
@@ -87,11 +102,7 @@ func (a *AnnotationValidator) Handle(_ context.Context, req admission.Request) a
 	return response
 }
 
-func (a *AnnotationValidator) handleCreate(req admission.Request) admission.Response {
-	pod := &corev1.Pod{}
-	if err := a.decoder.DecodeRaw(req.Object, pod); err != nil {
-		return admission.Errored(http.StatusBadRequest, err)
-	}
+func (a *AnnotationValidator) handleCreate(pod *corev1.Pod) admission.Response {
 	// The annotation is added by vpc-resource-controller which will come as an update event
 	// so we should block all request on create event
 	for _, annotationKey := range a.getAnnotationKeysToBeValidated() {
@@ -105,22 +116,14 @@ func (a *AnnotationValidator) handleCreate(req admission.Request) admission.Resp
 	return admission.Allowed("")
 }
 
-func (a *AnnotationValidator) handleUpdate(req admission.Request) admission.Response {
-	pod := &corev1.Pod{}
-	if err := a.decoder.DecodeRaw(req.Object, pod); err != nil {
-		return admission.Errored(http.StatusBadRequest, err)
-	}
-	oldPod := &corev1.Pod{}
-	if err := a.decoder.DecodeRaw(req.OldObject, oldPod); err != nil {
-		return admission.Errored(http.StatusBadRequest, err)
-	}
+func (a *AnnotationValidator) handleUpdate(userName string, pod, oldPod *corev1.Pod) admission.Response {
 	logger := a.Log.WithValues("name", pod.Name, "namespace", pod.Namespace, "uid", pod.UID)
 
 	// Block any update on Fargate SGP Annotation Key. The Fargate Security Group Annotation is
 	// added by the mutating WebHook on Create Event.
 	if pod.Annotations[FargatePodSGAnnotationKey] !=
 		oldPod.Annotations[FargatePodSGAnnotationKey] {
-		logger.Info("denying annotation", "username", req.UserInfo.Username,
+		logger.Info("denying annotation", "username", userName,
 			"annotation key", FargatePodSGAnnotationKey)
 		return admission.Denied("annotation is not set by mutating webhook")
 	}
@@ -131,9 +134,9 @@ func (a *AnnotationValidator) handleUpdate(req admission.Request) admission.Resp
 		if pod.Annotations[annotationKey] != oldPod.Annotations[annotationKey] {
 			// Checking for two users, as the Service Account used by controller was changed
 			// after first release.
-			if (req.UserInfo.Username != validUserInfo) && (req.UserInfo.Username != newValidUserInfo) &&
-				(req.UserInfo.Username != vpcControllerUserName) {
-				logger.Info("denying annotation", "username", req.UserInfo.Username,
+			if (userName != validUserInfo) && (userName != newValidUserInfo) &&
+				(userName != vpcControllerUserName) {
+				logger.Info("denying annotation", "username", userName,
 					"annotation key", annotationKey)
 				return admission.Denied("annotation is not set by vpc-resource-controller")
 			}

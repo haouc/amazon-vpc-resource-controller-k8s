@@ -362,6 +362,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	sgpController := &apps.SGPReconciler{
+		Log:    ctrl.Log.WithName("controllers").WithName("SecurityGroupPolicy Reconciler"),
+		Client: mgr.GetClient(),
+	}
+
+	if err := sgpController.SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "pod")
+		os.Exit(1)
+	}
+
 	if err := (&ec2API.ENICleaner{
 		EC2Wrapper:  ec2Wrapper,
 		ClusterName: clusterName,
@@ -423,19 +433,19 @@ func main() {
 
 	setupLog.Info("registering webhooks to the webhook server")
 	podMutationWebhook := webhookcore.NewPodMutationWebHook(
-		sgpAPI, ctrl.Log.WithName("resource mutating webhook"), controllerConditions, admission.NewDecoder(mgr.GetScheme()), healthzHandler)
+		sgpAPI, ctrl.Log.WithName("resource mutating webhook"), controllerConditions, admission.NewDecoder(mgr.GetScheme()), healthzHandler, sgpController)
 	webhookServer.Register("/mutate-v1-pod", &webhook.Admission{
 		Handler: podMutationWebhook,
 	})
 
 	nodeValidateWebhook := webhookcore.NewNodeUpdateWebhook(
-		controllerConditions, ctrl.Log.WithName("node validating webhook"), admission.NewDecoder(mgr.GetScheme()), healthzHandler)
+		controllerConditions, ctrl.Log.WithName("node validating webhook"), admission.NewDecoder(mgr.GetScheme()), healthzHandler, sgpController)
 	webhookServer.Register("/validate-v1-node", &webhook.Admission{
 		Handler: nodeValidateWebhook})
 
 	// Validating webhook for pod.
 	annotationValidator := webhookcore.NewAnnotationValidator(
-		controllerConditions, ctrl.Log.WithName("annotation validating webhook"), admission.NewDecoder(mgr.GetScheme()), healthzHandler)
+		controllerConditions, ctrl.Log.WithName("annotation validating webhook"), admission.NewDecoder(mgr.GetScheme()), healthzHandler, sgpController)
 	webhookServer.Register("/validate-v1-pod", &webhook.Admission{
 		Handler: annotationValidator})
 
