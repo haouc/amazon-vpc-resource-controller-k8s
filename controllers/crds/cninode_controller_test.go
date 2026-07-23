@@ -163,6 +163,61 @@ func TestCNINodeReconcile(t *testing.T) {
 				assert.Equal(t, res, reconcile.Result{})
 			},
 		},
+		{
+			name: "verify CNINode managed by another controller is skipped entirely",
+			args: args{
+				mockNode: mockNodeWithLabel,
+				mockCNINode: &v1alpha1.CNINode{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: mockName,
+					},
+					Spec: v1alpha1.CNINodeSpec{
+						ManagedBy: v1alpha1.ManagedByEKSAutoMode,
+					},
+				},
+			},
+			// no prepare: the finalizer manager mock has no expectations, so any
+			// AddFinalizers call would fail the test
+			prepare: nil,
+			asserts: func(res reconcile.Result, err error, cniNode *v1alpha1.CNINode) {
+				assert.NoError(t, err)
+				assert.Equal(t, res, reconcile.Result{})
+				// no tags, labels, or finalizer added by this controller
+				assert.Empty(t, cniNode.Labels)
+				assert.Empty(t, cniNode.Spec.Tags)
+				assert.NotContains(t, cniNode.Finalizers, config.NodeTerminationFinalizer)
+			},
+		},
+		{
+			name: "verify empty managedBy is treated as vpc-resource-controller (backward compatibility)",
+			args: args{
+				mockNode: mockNodeWithLabel,
+				mockCNINode: &v1alpha1.CNINode{
+					ObjectMeta: metav1.ObjectMeta{
+						Name: mockName,
+						Labels: map[string]string{
+							config.NodeLabelOS: "linux",
+						},
+					},
+					Spec: v1alpha1.CNINodeSpec{
+						Tags: map[string]string{
+							config.VPCCNIClusterNameKey: mockClusterName,
+						},
+					},
+				},
+			},
+			prepare: func(f *fields) {
+				// tags and labels already present, so reconcile proceeds to the
+				// finalizer step — proving the object was NOT skipped
+				f.mockFinalizerManager.EXPECT().
+					AddFinalizers(gomock.Any(), gomock.Any(), config.NodeTerminationFinalizer).
+					Return(nil)
+			},
+			asserts: func(res reconcile.Result, err error, cniNode *v1alpha1.CNINode) {
+				assert.NoError(t, err)
+				assert.Equal(t, res, reconcile.Result{})
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
